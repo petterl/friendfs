@@ -1,6 +1,6 @@
+#!/usr/bin/env escript
 
--define(DBG(Str,Args),ok).
--define(INFO(Str,Args),io:format(Str,Args)).
+%%-define(DBG(Str,Args),ok).
 
 main(Args) ->
     add_paths_to_apps(),
@@ -12,7 +12,7 @@ main(Args) ->
 	"create_tar" ->
 	    create_tar(tl(Args));
 	Else ->
-	    ?INFO("~p is an unkown function!\n",[Else])
+	    io:format("~p is an unkown function!\n",[Else])
     end.
 
 %%%%%%%%%%%%%%%%%%%5
@@ -30,7 +30,7 @@ create_tar([Relfile]) ->
 
 create_rel([Relfile]) ->
 
-    ?INFO("Creating rts structure!\n",[]),
+    io:format("Creating rts structure!\n",[]),
 
     cmd("mkdir rts.backup",[]),
     cmd("mv rts rts.backup/~s",[date_to_string(calendar:local_time())]),
@@ -98,9 +98,9 @@ create_rel([Relfile]) ->
 
 cmd(String,Args) ->
     Cmd = lists:flatten(io_lib:format(String,Args)),
-    ?DBG("EXECUTING: ~p\n",[Cmd]),
+    %%?DBG("EXECUTING: ~p\n",[Cmd]),
     Res = os:cmd(Cmd),
-    ?DBG("Res: ~p\n",[Res]),
+    %%?DBG("Res: ~p\n",[Res]),
     Res.
 
 
@@ -110,7 +110,7 @@ cmd(String,Args) ->
 
 update_rel([Relfile]) ->
 
-    ?INFO("Updating .rel file\n",[]),
+    io:format("Updating .rel file\n",[]),
     
     file:copy(Relfile,Relfile++".backup"),
     
@@ -141,15 +141,15 @@ get_app_vsn({AppName,OldVsn}) ->
 	{error,{already_loaded,AppName}} ->
 	    get_app_vsn(AppName,OldVsn);
 	{error,ErrorInfo} ->
-	    ?INFO("Error while loading ~p:\n ErrorInfo: ~p\n",[AppName,ErrorInfo]),
+	    io:format("Error while loading ~p:\n ErrorInfo: ~p\n",[AppName,ErrorInfo]),
 	    {AppName,OldVsn}
     end.
 get_app_vsn(AppName,OldVsn) when is_atom(AppName),is_list(OldVsn) ->
-    case lists:keyfind(AppName,1,application:loaded_applications()) of
-	{AppName,_AppDescr,OldVsn} ->
+    case lists:keysearch(AppName,1,application:loaded_applications()) of
+	{value, {AppName,_AppDescr,OldVsn}} ->
 	    {AppName,OldVsn};
-	{AppName,_AppDescr,NewVsn} ->
-	    ?INFO("Updating version of ~p from ~p to ~p\n",[AppName,OldVsn,NewVsn]),
+	{value, {AppName,_AppDescr,NewVsn}} ->
+	    io:format("Updating version of ~p from ~p to ~p\n",[AppName,OldVsn,NewVsn]),
 	    {AppName,NewVsn}
     end.
 	
