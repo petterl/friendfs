@@ -1,6 +1,6 @@
 APPNAME=friendfs
 
-DIRS = src
+DIRS = friendfs/src
 
 all: subdirs
 
@@ -16,3 +16,13 @@ clean:
 
 docs:
 	erl -noshell -eval "edoc:application($(APPNAME), \".\", [])" -s init stop
+
+
+deploy: update_rel
+	escript  runtime.escript create_tar friendfs.rel
+
+rel: update_rel
+	escript  runtime.escript create_rel friendfs.rel
+
+update_rel: friendfs.rel
+	escript runtime.escript update_rel $<	
