@@ -1,0 +1,13 @@
+#!/bin/sh 
+[ -f /etc/friendsfs.conf ] && . /etc/friendsfs.conf
+
+[ "x" = "x$FRIENDFS_CTL_ERL_ARGS" ] && FRIENDFS_CTL_ERL_ARGS=${CTL_ERL_ARGS}
+
+exec erl \
+    -pa "`dirname $0`/../ebin" \
+    -noinput \
+    -hidden \
+    ${FREINDSFS_CTL_ERL_ARGS} \
+    -sname friendsfsctl$$ \
+    -s friendsfs_control \
+    -extra "$@"

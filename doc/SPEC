@@ -1,0 +1,39 @@
+friendfs
+
+Config file
+===========
+%%% Storage configuration
+%%%
+%%% Define the stores used for the filesystem
+%%% Store can be of type: file, ftp, ssh
+%%%  
+{storage, [{ftp, "ftp.example.com", "user", "password", "/example/dir/"},
+	   {ssh, "example.com", "user", "password", "/home/fs/dir"},
+	   {file, "/var/local/fs"}}.
+
+%%% Crypt data
+{gnupg, {key, "0xEF8S82332"}}.
+
+Filesystem
+==========
+Handle file system and file -> chunk relation
+
+Write a Chunk to n Stores
+Read Chunk from closest Store
+
+
+StorageMgr
+==========
+List all Stores
+Connect a Store 
+Disconnection of Store
+List Chunks in Store
+Fetch Chunk
+Write Chunk
+
+Store
+=====
+Connect to a datastore
+List Chunks in datastore
+Fetch Chunk
+Write Chunk

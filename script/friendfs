@@ -1,0 +1,115 @@
+#! /bin/sh
+
+#---------------------------------------------------------------------
+#                              friendfs                               
+# 
+# Tool to mount walkenfs via mount(8) or fstab(5).
+#---------------------------------------------------------------------
+
+#---------------------------------------------------------------------
+#   * mount_point is gotten from the 2nd field of fstab(5) or the dir
+#     argument to mount(8)
+#   * mount_opts is gotten from the 4th field of fstab(5) or the -o
+#     argument to mount(8)
+# 
+# example /etc/fstab entry:
+# 
+# friendfs   /mnt/ffs	fuse    defaults        0       0
+# 
+# example mount invocation:
+# 
+# mount -t fuse friendfs/mnt/ffs
+#
+# In the future "-o fs=name" will be used to choose which 
+# filesystem to mount. 
+#---------------------------------------------------------------------
+
+is_alive () {
+  epmd -names 2>/dev/null | grep "^name $1 at port " >/dev/null 2>/dev/null || false
+}
+
+optional () {
+  local what="$1"
+  local vars="$2"
+  local default="$3"
+
+  local val=`perl -e "(\\\$_) = @ARGV; m/$what::([^:]+)/ && print \"\\\$1\"" -- "$2"`
+
+  printf "%s" "${val:-$default}"
+}
+
+required () {
+  local what="$1"
+  local vars="$2"
+
+  perl -e "(\$_) = @ARGV; m/$what::[^:]/ || exit 1" -- "$appvars" || {
+    echo "error: $what is a required parameter" 1>&2
+    exit 1
+  }
+}
+
+forbidden () {
+  local what="$1"
+  local vars="$2"
+
+  perl -e "(\$_) = @ARGV; m/$what::[^:]/ && exit 1" -- "$appvars" || {
+    echo "error: $what is a forbidden parameter" 1>&2
+    exit 1
+  }
+}
+
+appname=`basename $0`
+mount_point="$1"
+dash_o="$2"
+mount_opts="$3"
+fs="default"
+name="$appname-$fs"
+cookie="$appname"
+
+if [ ! -d "$mount_point" ]; then
+	echo "$appname: Mount point \"$mount_point\" missing!"
+   	exit 1;
+fi
+
+HEART_COMMAND="'$0' '$1' '$2' '$3'"
+export HEART_COMMAND
+
+#cookie=`optional -setcookie "$appvars" friendfs`
+#name=`optional -name "$appvars" friendfs`
+
+if is_alive "$name"
+  then
+    echo "another friendfs server '$name' is already running." 1>&2
+    exit 1
+  fi
+
+#forbidden -friendfs::mount_point "$appvars"
+#forbidden -friendfs::mount_opts "$appvars"
+
+args=`perl -e '($_) = @ARGV; 
+               s/-setcookie::[^:]+//; 
+               s/-name::[^:]+//; 
+               s/::/ /g; 
+               print' -- "$appvars"`
+
+export PATH
+
+ERL_CRASH_DUMP=/dev/null
+export ERL_CRASH_DUMP
+
+#erl -heart -detached -setcookie "$cookie" -name $name -friendfs mount_point "\"$mount_point\"" -friendfs mount_opts "\"$mount_opts\"" -s friendfs  > /tmp/erlfile
+
+#exit 1
+
+#erl -boot start_sasl -heart -setcookie "$cookie" -name $name -friendfs mount_point "\"$mount_point\"" -friendfs mount_opts "\"$mount_opts\"" -s friendfs &
+
+# if you uncomment all this stuff, you can get a better grip for debugging
+#
+touch /tmp/sux
+touch /tmp/sux.err
+exec 1>>/tmp/sux
+exec 2>>/tmp/sux.err
+#
+(
+  erl -boot start_sasl -heart -noinput -noshell -setcookie "$cookie" -name $name -friendfs mount_point "\"$mount_point\"" -friendfs mount_opts "\"$mount_opts\"" -s friendfs &
+) &
