@@ -4,5 +4,5 @@
           {stdlib,"1.16.2"},
           {sasl,"2.1.6"},
           {runtime_tools,"1.8"},
-          {fuserl,"0.0"},
+          {fuserl,"2.0.5"},
           {friendfs,"0.1.0"}]}.

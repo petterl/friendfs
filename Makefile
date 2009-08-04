@@ -18,8 +18,10 @@ docs:
 	erl -noshell -eval "edoc:application($(APPNAME), \".\", [])" -s init stop
 
 
-deploy: update_rel
+deploy: all update_rel
 	escript  runtime.escript create_tar friendfs.rel
+	cp friendfs.tar.gz rts
+	(cd rts && tar xvzf friendfs.tar.gz)
 
 rel: update_rel
 	escript  runtime.escript create_rel friendfs.rel

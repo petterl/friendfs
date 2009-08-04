@@ -67,7 +67,7 @@ terminate (_Reason, _State) -> ok.
 			st_nlink = 1 }).
 
 -define(DBG(FunName, Str, Vars), 
-	io:format(FunName ++ "(Ctx: ~p, "++Str++")~n", 
+	io:format(FunName ++ "(Ctx: ~p,\n\t"++Str++")~n", 
 		  [_Ctx|Vars])).
 
 access(_Ctx, Inode, Mask, _Cont, State) ->
@@ -89,9 +89,11 @@ lookup(_Ctx, Parent, BinName, _Cont, State) ->
     case gb_trees:lookup({Parent, Name}, 
 			 State#fs.names) of
 	Param = #fuse_entry_param{} ->
-	    #fuse_reply_entry{ fuse_entry_param = Param };
+	    {#fuse_reply_entry{ fuse_entry_param = Param },State};
+	none ->
+		{#fuse_reply_err{ err = enoent },State};
 	{error, Reason} ->
-	    #fuse_reply_err{ err = Reason }
+	    {#fuse_reply_err{ err = Reason },State}
     end.
 
 open(_Ctx, X = 1, Fi = #fuse_file_info{}, _Cont, State) ->
