@@ -1,9 +1,9 @@
-#!/usr/bin/env escript
 
-%%-define(DBG(Str,Args),ok).
+-define(DBG(Str,Args),ok).
+-define(INFO(Str,Args),io:format(Str,Args)).
 
 main(Args) ->
-    add_paths_to_apps(),
+    find_ebin(fun code:add_patha/1),
     case hd(Args) of
 	"update_rel" ->
 	    update_rel(tl(Args));
@@ -12,7 +12,7 @@ main(Args) ->
 	"create_tar" ->
 	    create_tar(tl(Args));
 	Else ->
-	    io:format("~p is an unkown function!\n",[Else])
+	    ?INFO("~p is an unkown function!\n",[Else])
     end.
 
 %%%%%%%%%%%%%%%%%%%5
@@ -30,10 +30,10 @@ create_tar([Relfile]) ->
 
 create_rel([Relfile]) ->
 
-    io:format("Creating rts structure!\n",[]),
+    ?INFO("Creating rts structure!\n",[]),
 
     cmd("mkdir rts.backup",[]),
-    cmd("mv rts rts.backup/~s",[date_to_string(calendar:local_time())]),
+    cmd("cp rts rts.backup/~s",[date_to_string(calendar:local_time())]),
     
     {ok,[{release,
 	  {_Relname,RelVsn},
@@ -51,9 +51,9 @@ create_rel([Relfile]) ->
 
     %% Copy erts
 
-    cmd("cp -Lr ~s rts/",[PathtoRuntime ++ "erts-"++ErtsVsn]),
+    cmd("cp -LR ~s rts/",[PathtoRuntime ++ "erts-"++ErtsVsn]),
 
-    cmd("cp -Lr ~s rts/",[PathtoRuntime ++ "bin"]),
+    cmd("cp -LR ~s rts/",[PathtoRuntime ++ "bin"]),
 
     %% Modify rts/bin/start
     
@@ -98,9 +98,9 @@ create_rel([Relfile]) ->
 
 cmd(String,Args) ->
     Cmd = lists:flatten(io_lib:format(String,Args)),
-    %%?DBG("EXECUTING: ~p\n",[Cmd]),
+    ?DBG("EXECUTING: ~p\n",[Cmd]),
     Res = os:cmd(Cmd),
-    %%?DBG("Res: ~p\n",[Res]),
+    ?DBG("Res: ~p\n",[Res]),
     Res.
 
 
@@ -110,7 +110,7 @@ cmd(String,Args) ->
 
 update_rel([Relfile]) ->
 
-    io:format("Updating .rel file\n",[]),
+    ?INFO("Updating .rel file\n",[]),
     
     file:copy(Relfile,Relfile++".backup"),
     
@@ -122,7 +122,13 @@ update_rel([Relfile]) ->
 
     UpdatedApps = [get_app_vsn(App) || App <- Apps],
 
-    UpdatedErtsVsn = ErtsVsn,
+    UpdatedErtsVsn = case erlang:system_info(version) of
+						ErtsVsn -> ErtsVsn;
+						Other ->
+							?INFO("Updating Erts version from ~p to ~p\n",
+							[ErtsVsn,Other]),
+							Other
+					end,
     UpdatedRelVsn = RelVsn,
 
     {ok,D} = file:open(Relfile,[write]),
@@ -130,7 +136,9 @@ update_rel([Relfile]) ->
 			{erts,UpdatedErtsVsn},
 			UpdatedApps}]),
     file:sync(D),
-    file:close(D).
+    file:close(D),
+
+	find_ebin(fun(Arg) -> update_appfile(Arg) end).
     
     
     
@@ -141,37 +149,78 @@ get_app_vsn({AppName,OldVsn}) ->
 	{error,{already_loaded,AppName}} ->
 	    get_app_vsn(AppName,OldVsn);
 	{error,ErrorInfo} ->
-	    io:format("Error while loading ~p:\n ErrorInfo: ~p\n",[AppName,ErrorInfo]),
+	    ?INFO("Error while loading ~p:\n ErrorInfo: ~p\n",[AppName,ErrorInfo]),
 	    {AppName,OldVsn}
     end.
 get_app_vsn(AppName,OldVsn) when is_atom(AppName),is_list(OldVsn) ->
-    case lists:keysearch(AppName,1,application:loaded_applications()) of
-	{value, {AppName,_AppDescr,OldVsn}} ->
+    case lists:keyfind(AppName,1,application:loaded_applications()) of
+	{AppName,_AppDescr,OldVsn} ->
 	    {AppName,OldVsn};
-	{value, {AppName,_AppDescr,NewVsn}} ->
-	    io:format("Updating version of ~p from ~p to ~p\n",[AppName,OldVsn,NewVsn]),
+	{AppName,_AppDescr,NewVsn} ->
+	    ?INFO("Updating version of ~p from ~p to ~p\n",[AppName,OldVsn,NewVsn]),
 	    {AppName,NewVsn}
     end.
 	
 
 
-add_paths_to_apps() ->
+find_ebin(Fun) ->
     {ok,Dirs} = file:list_dir("."),
-    add_paths_to_apps(Dirs,"./").
-add_paths_to_apps(["ebin"|_Tail],Prefix) ->
-    code:add_patha(Prefix++"ebin");
-add_paths_to_apps([Dir|Tail],Prefix) ->
+    find_ebin(Dirs,"./",Fun).
+find_ebin(["rts"|Tail],Prefix,Fun) ->
+	find_ebin(Tail,Prefix,Fun);	
+find_ebin(["ebin"|_Tail],Prefix,Fun) ->
+	Fun(Prefix++"ebin");
+find_ebin([Dir|Tail],Prefix,Fun) ->
     case file:read_file_info(Prefix++Dir) of
 	{ok,{file_info,_,directory,_,_,_,_,_,_,_,_,_,_,_}} ->
 	    {ok,Dirs} = file:list_dir(Prefix++Dir),
-	    add_paths_to_apps(Dirs,Prefix++Dir++"/"),
-	    add_paths_to_apps(Tail,Prefix);
+	    find_ebin(Dirs,Prefix++Dir++"/",Fun),
+	    find_ebin(Tail,Prefix,Fun);
 	_Else ->
-	    add_paths_to_apps(Tail,Prefix)
+	    find_ebin(Tail,Prefix,Fun)
     end;
-add_paths_to_apps([],_) ->
+find_ebin([],_,_Fun) ->
     ok.
+
+update_appfile(EbinPath) ->
+	["ebin",AppNameStr|_] = lists:reverse(string:tokens(EbinPath,"/")),
+	AppFile = EbinPath++"/"++AppNameStr++".app",
+	?DBG("AppFile = ~p\n",[AppFile]),
+	{ok,[{application,AppName,AppData}]} = file:consult(AppFile),
+	NewModules = get_modules(EbinPath,lists:keyfind(modules,1,AppData),AppName),
+	NewAppData = lists:keyreplace(modules,1,AppData,{modules,NewModules}),
+	{ok,Dev} = file:open(AppFile,[write]),
+	io:fwrite(Dev,"~p.",[{application,AppName,NewAppData}]),
+	file:sync(Dev),
+	file:close(Dev).
     
+get_modules(Dir,OldMods,AppName) ->
+	{ok,Files} = file:list_dir(Dir),
+	NewMods = [list_to_atom(ModName) || [ModName,End] <- 
+	              [string:tokens(File,".") || File <- Files], End == "beam"],
+	compare_mods(NewMods,OldMods,AppName),
+	NewMods.
+	
+compare_mods(New,New,_AppName) ->
+	ok;
+compare_mods(New,{modules,Old},AppName) ->
+	lists:map(fun(NewMod) ->
+				case lists:member(NewMod,Old) of
+					false ->
+						?INFO("~p was added to ~p.app\n",[NewMod,AppName]);
+					_Else ->
+						ok
+				end
+			  end,New),
+	lists:map(fun(OldMod) ->
+				case lists:member(OldMod,New) of
+					false ->
+						?INFO("~p was removed from ~p.app\n",[OldMod,AppName]);
+					_Else ->
+						ok
+				end
+			  end,Old).
+
 
 %%% General functions!
 date_to_string({{YY,MM,DD},{HH,Mi,SS}}) ->
