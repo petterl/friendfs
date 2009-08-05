@@ -116,29 +116,29 @@ update_rel([Relfile]) ->
 	  {erts,ErtsVsn},
 	  Apps
 	 }]} = file:consult(Relfile),
-
+    
     UpdatedApps = [get_app_vsn(App) || App <- Apps],
-
+    
     UpdatedErtsVsn = case erlang:system_info(version) of
-						ErtsVsn -> ErtsVsn;
-						Other ->
-							info("Updating Erts version from ~p to ~p\n",
-							[ErtsVsn,Other]),
-							Other
-					end,
+			 ErtsVsn -> ErtsVsn;
+			 Other ->
+			     info("Updating Erts version from ~p to ~p\n",
+							     [ErtsVsn,Other]),
+			     Other
+		     end,
     UpdatedRelVsn = RelVsn,
-
+    
     {ok,D} = file:open(Relfile,[write]),
     io:fwrite(D,"~p.",[{release,{Relname,UpdatedRelVsn},
 			{erts,UpdatedErtsVsn},
 			UpdatedApps}]),
     file:sync(D),
     file:close(D),
+    
+    find_ebin(fun(Arg) -> update_appfile(Arg) end).
 
-	find_ebin(fun(Arg) -> update_appfile(Arg) end).
-    
-    
-    
+
+
 get_app_vsn({AppName,OldVsn}) ->
     case application:load(AppName) of
 	ok ->
@@ -164,9 +164,9 @@ find_ebin(Fun) ->
     {ok,Dirs} = file:list_dir("."),
     find_ebin(Dirs,"./",Fun).
 find_ebin(["rts"|Tail],Prefix,Fun) ->
-	find_ebin(Tail,Prefix,Fun);	
+    find_ebin(Tail,Prefix,Fun);	
 find_ebin(["ebin"|_Tail],Prefix,Fun) ->
-	Fun(Prefix++"ebin");
+    Fun(Prefix++"ebin");
 find_ebin([Dir|Tail],Prefix,Fun) ->
     case file:read_file_info(Prefix++Dir) of
 	{ok,{file_info,_,directory,_,_,_,_,_,_,_,_,_,_,_}} ->
@@ -180,44 +180,44 @@ find_ebin([],_,_Fun) ->
     ok.
 
 update_appfile(EbinPath) ->
-	["ebin",AppNameStr|_] = lists:reverse(string:tokens(EbinPath,"/")),
-	AppFile = EbinPath++"/"++AppNameStr++".app",
-	dbg("AppFile = ~p\n",[AppFile]),
-	{ok,[{application,AppName,AppData}]} = file:consult(AppFile),
-        {value, Mods} = lists:keysearch(modules,1,AppData),
-	NewModules = get_modules(EbinPath,Mods,AppName),
-	NewAppData = lists:keyreplace(modules,1,AppData,{modules,NewModules}),
-	{ok,Dev} = file:open(AppFile,[write]),
-	io:fwrite(Dev,"~p.",[{application,AppName,NewAppData}]),
-	file:sync(Dev),
-	file:close(Dev).
-    
-get_modules(Dir,OldMods,AppName) ->
-	{ok,Files} = file:list_dir(Dir),
-	NewMods = [list_to_atom(ModName) || [ModName,End] <- 
-	              [string:tokens(File,".") || File <- Files], End == "beam"],
-	compare_mods(NewMods,OldMods,AppName),
-	NewMods.
-	
+    ["ebin",AppNameStr|_] = lists:reverse(string:tokens(EbinPath,"/")),
+    AppFile = EbinPath++"/"++AppNameStr++".app",
+    dbg("AppFile = ~p\n",[AppFile]),
+    {ok,[{application,AppName,AppData}]} = file:consult(AppFile),
+    NewModules = get_modules(EbinPath,lists:keysearch(modules,1,AppData),AppName),
+    NewAppData = lists:keyreplace(modules,1,AppData,{modules,NewModules}),
+    {ok,Dev} = file:open(AppFile,[write]),
+    io:fwrite(Dev,"~p.",[{application,AppName,NewAppData}]),
+    file:sync(Dev),
+    file:close(Dev).
+
+get_modules(Dir,{value,OldMods},AppName) ->
+    {ok,Files} = file:list_dir(Dir),
+    NewMods = [list_to_atom(ModName) ||
+		  [ModName,End] <- [string:tokens(File,".") || File <- Files],
+		  End == "beam"],
+    compare_mods(NewMods,OldMods,AppName),
+    NewMods.
+
 compare_mods(New,New,_AppName) ->
-	ok;
+    ok;
 compare_mods(New,{modules,Old},AppName) ->
-	lists:map(fun(NewMod) ->
-				case lists:member(NewMod,Old) of
-					false ->
-						info("~p was added to ~p.app\n",[NewMod,AppName]);
-					_Else ->
-						ok
-				end
-			  end,New),
-	lists:map(fun(OldMod) ->
-				case lists:member(OldMod,New) of
-					false ->
-						info("~p was removed from ~p.app\n",[OldMod,AppName]);
-					_Else ->
-						ok
-				end
-			  end,Old).
+    lists:map(fun(NewMod) ->
+		      case lists:member(NewMod,Old) of
+			  false ->
+			      info("~p was added to ~p.app\n",[NewMod,AppName]);
+			  _Else ->
+			      ok
+		      end
+	      end,New),
+    lists:map(fun(OldMod) ->
+		      case lists:member(OldMod,New) of
+			  false ->
+			      info("~p was removed from ~p.app\n",[OldMod,AppName]);
+			  _Else ->
+			      ok
+		      end
+	      end,Old).
 
 
 %%% General functions!
