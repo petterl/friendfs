@@ -150,10 +150,10 @@ get_app_vsn({AppName,OldVsn}) ->
 	    {AppName,OldVsn}
     end.
 get_app_vsn(AppName,OldVsn) when is_atom(AppName),is_list(OldVsn) ->
-    case lists:keyfind(AppName,1,application:loaded_applications()) of
-	{AppName,_AppDescr,OldVsn} ->
+    case lists:keysearch(AppName,1,application:loaded_applications()) of
+	{value, {AppName,_AppDescr,OldVsn}} ->
 	    {AppName,OldVsn};
-	{AppName,_AppDescr,NewVsn} ->
+	{value, {AppName,_AppDescr,NewVsn}} ->
 	    info("Updating version of ~p from ~p to ~p\n",[AppName,OldVsn,NewVsn]),
 	    {AppName,NewVsn}
     end.
@@ -184,7 +184,7 @@ update_appfile(EbinPath) ->
 	AppFile = EbinPath++"/"++AppNameStr++".app",
 	dbg("AppFile = ~p\n",[AppFile]),
 	{ok,[{application,AppName,AppData}]} = file:consult(AppFile),
-	NewModules = get_modules(EbinPath,lists:keyfind(modules,1,AppData),AppName),
+	{value, NewModules} = get_modules(EbinPath,lists:keysearch(modules,1,AppData),AppName),
 	NewAppData = lists:keyreplace(modules,1,AppData,{modules,NewModules}),
 	{ok,Dev} = file:open(AppFile,[write]),
 	io:fwrite(Dev,"~p.",[{application,AppName,NewAppData}]),
