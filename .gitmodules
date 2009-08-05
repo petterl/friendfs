@@ -1,0 +1,3 @@
+[submodule "fuserl"]
+	path = fuserl
+	url = git://github.com/petterl/fuserl.git
