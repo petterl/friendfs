@@ -1,7 +1,4 @@
 
--define(DBG(Str,Args),ok).
--define(INFO(Str,Args),io:format(Str,Args)).
-
 main(Args) ->
     find_ebin(fun code:add_patha/1),
     case hd(Args) of
@@ -12,7 +9,7 @@ main(Args) ->
 	"create_tar" ->
 	    create_tar(tl(Args));
 	Else ->
-	    ?INFO("~p is an unkown function!\n",[Else])
+	    info("~p is an unkown function!\n",[Else])
     end.
 
 %%%%%%%%%%%%%%%%%%%5
@@ -30,7 +27,7 @@ create_tar([Relfile]) ->
 
 create_rel([Relfile]) ->
 
-    ?INFO("Creating rts structure!\n",[]),
+    info("Creating rts structure!\n",[]),
 
     cmd("mkdir rts.backup",[]),
     cmd("cp rts rts.backup/~s",[date_to_string(calendar:local_time())]),
@@ -98,9 +95,9 @@ create_rel([Relfile]) ->
 
 cmd(String,Args) ->
     Cmd = lists:flatten(io_lib:format(String,Args)),
-    ?DBG("EXECUTING: ~p\n",[Cmd]),
+    dbg("EXECUTING: ~p\n",[Cmd]),
     Res = os:cmd(Cmd),
-    ?DBG("Res: ~p\n",[Res]),
+    dbg("Res: ~p\n",[Res]),
     Res.
 
 
@@ -110,7 +107,7 @@ cmd(String,Args) ->
 
 update_rel([Relfile]) ->
 
-    ?INFO("Updating .rel file\n",[]),
+    info("Updating .rel file\n",[]),
     
     file:copy(Relfile,Relfile++".backup"),
     
@@ -125,7 +122,7 @@ update_rel([Relfile]) ->
     UpdatedErtsVsn = case erlang:system_info(version) of
 						ErtsVsn -> ErtsVsn;
 						Other ->
-							?INFO("Updating Erts version from ~p to ~p\n",
+							info("Updating Erts version from ~p to ~p\n",
 							[ErtsVsn,Other]),
 							Other
 					end,
@@ -149,7 +146,7 @@ get_app_vsn({AppName,OldVsn}) ->
 	{error,{already_loaded,AppName}} ->
 	    get_app_vsn(AppName,OldVsn);
 	{error,ErrorInfo} ->
-	    ?INFO("Error while loading ~p:\n ErrorInfo: ~p\n",[AppName,ErrorInfo]),
+	    info("Error while loading ~p:\n ErrorInfo: ~p\n",[AppName,ErrorInfo]),
 	    {AppName,OldVsn}
     end.
 get_app_vsn(AppName,OldVsn) when is_atom(AppName),is_list(OldVsn) ->
@@ -157,7 +154,7 @@ get_app_vsn(AppName,OldVsn) when is_atom(AppName),is_list(OldVsn) ->
 	{AppName,_AppDescr,OldVsn} ->
 	    {AppName,OldVsn};
 	{AppName,_AppDescr,NewVsn} ->
-	    ?INFO("Updating version of ~p from ~p to ~p\n",[AppName,OldVsn,NewVsn]),
+	    info("Updating version of ~p from ~p to ~p\n",[AppName,OldVsn,NewVsn]),
 	    {AppName,NewVsn}
     end.
 	
@@ -185,7 +182,7 @@ find_ebin([],_,_Fun) ->
 update_appfile(EbinPath) ->
 	["ebin",AppNameStr|_] = lists:reverse(string:tokens(EbinPath,"/")),
 	AppFile = EbinPath++"/"++AppNameStr++".app",
-	?DBG("AppFile = ~p\n",[AppFile]),
+	dbg("AppFile = ~p\n",[AppFile]),
 	{ok,[{application,AppName,AppData}]} = file:consult(AppFile),
 	NewModules = get_modules(EbinPath,lists:keyfind(modules,1,AppData),AppName),
 	NewAppData = lists:keyreplace(modules,1,AppData,{modules,NewModules}),
@@ -207,7 +204,7 @@ compare_mods(New,{modules,Old},AppName) ->
 	lists:map(fun(NewMod) ->
 				case lists:member(NewMod,Old) of
 					false ->
-						?INFO("~p was added to ~p.app\n",[NewMod,AppName]);
+						info("~p was added to ~p.app\n",[NewMod,AppName]);
 					_Else ->
 						ok
 				end
@@ -215,7 +212,7 @@ compare_mods(New,{modules,Old},AppName) ->
 	lists:map(fun(OldMod) ->
 				case lists:member(OldMod,New) of
 					false ->
-						?INFO("~p was removed from ~p.app\n",[OldMod,AppName]);
+						info("~p was removed from ~p.app\n",[OldMod,AppName]);
 					_Else ->
 						ok
 				end
@@ -227,3 +224,8 @@ date_to_string({{YY,MM,DD},{HH,Mi,SS}}) ->
     lists:flatten(io_lib:format("~p~p~pT~p~p~p",[YY,MM,DD,HH,Mi,SS])).
 
 
+dbg(_Str,_Args) ->
+    ok.
+
+info(Str,Args) ->
+    io:format("Info: "++Str,Args).
