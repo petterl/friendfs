@@ -20,8 +20,10 @@ clean:
 docs:
 	erl -noshell -eval "edoc:application($(APPNAME), \".\", [])" -s init stop
 
+rts:
+	mkdir rts
 
-deploy: all update_rel
+deploy: all update_rel rts
 	escript  runtime.escript create_tar friendfs.rel
 	cp friendfs.tar.gz rts
 	(cd rts && tar xvzf friendfs.tar.gz)
