@@ -18,7 +18,7 @@
 # 
 # example mount invocation:
 # 
-# mount -t fuse friendfs/mnt/ffs
+# mount -t fuse friendfs /mnt/ffs
 #
 # In the future "-o fs=name" will be used to choose which 
 # filesystem to mount. 
@@ -58,6 +58,13 @@ forbidden () {
   }
 }
 
+start () {
+  local prefix=`dirname $0`
+  echo $prefix
+  `$prefix/start`
+
+}
+
 appname=`basename $0`
 mount_point="$1"
 dash_o="$2"
@@ -77,12 +84,14 @@ export HEART_COMMAND
 #cookie=`optional -setcookie "$appvars" friendfs`
 #name=`optional -name "$appvars" friendfs`
 
-if is_alive "$name"
+if ! is_alive "$name"
   then
-    echo "another friendfs server '$name' is already running." 1>&2
-    exit 1
+    echo "$appname: The erlang VM is not running, starting it!"
+    start
+    exit 1;
   fi
 
+exit 1;
 #forbidden -friendfs::mount_point "$appvars"
 #forbidden -friendfs::mount_opts "$appvars"
 
@@ -93,9 +102,6 @@ args=`perl -e '($_) = @ARGV;
                print' -- "$appvars"`
 
 export PATH
-
-ERL_CRASH_DUMP=/dev/null
-export ERL_CRASH_DUMP
 
 #erl -heart -detached -setcookie "$cookie" -name $name -friendfs mount_point "\"$mount_point\"" -friendfs mount_opts "\"$mount_opts\"" -s friendfs  > /tmp/erlfile
 

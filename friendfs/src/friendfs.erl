@@ -3,7 +3,8 @@
 -export ([ start/0,
            start/2,
            stop/0,
-           stop/1 ]).
+           stop/1,
+	   add_config/1]).
 
 %-=====================================================================-
 %-                        application callbacks                        -
@@ -36,3 +37,7 @@ stop () ->
 
 stop(_State) ->
   ok.
+
+add_config(Arg) ->
+    io:format("Adding a new mount point! Config = ~p\n",[Arg]).
+    
