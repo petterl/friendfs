@@ -1,13 +1,11 @@
 APPNAME=friendfs
 
-DIRS = friendfs/src
-
-export ERL_COMPILE_FLAGS= -pa $(PWD)/fuserl/ebin
+DIRS=friendfs/src
 
 all: subdirs
 
-fuserl/README: .gitmodules
-	git submodule update --init fuserl
+## If fuserl is not install centrally look for it in a subdir this project
+export ERL_COMPILE_FLAGS += -pa $(PWD)/fuserl/ebin/
 
 subdirs:
 	@for d in $(DIRS); do \
