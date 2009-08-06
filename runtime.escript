@@ -89,7 +89,8 @@ create_rel([Relfile]) ->
     file:sync(SysConfigDev),
     file:close(SysConfigDev),
     
-
+    {ok,_} = file:copy("friendfs/script/friendfs","rts/bin/friendfs"),
+    
     cmd("chmod -R 755 rts",[]),
     
     ok.
