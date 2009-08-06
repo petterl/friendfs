@@ -1,6 +1,9 @@
 APPNAME=friendfs
 
-DIRS = friendfs/src
+DIRS=friendfs/src
+
+## If fuserl is not install centrally look for it in a subdir this project
+export ERL_COMPILE_FLAGS += -pa $(PWD)/fuserl/ebin/
 
 all: subdirs
 
