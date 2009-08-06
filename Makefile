@@ -2,10 +2,7 @@ APPNAME=friendfs
 
 DIRS = friendfs/src
 
-all: fuserl/README subdirs
-
-fuserl/README: .gitmodules
-	git submodule update --init fuserl
+all: subdirs
 
 subdirs:
 	@for d in $(DIRS); do \
