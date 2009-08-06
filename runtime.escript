@@ -31,12 +31,14 @@ create_rel([Relfile]) ->
 
     cmd("mkdir rts.backup",[]),
     cmd("cp rts rts.backup/~s",[date_to_string(calendar:local_time())]),
+
+
     
     {ok,[{release,
-	  {_Relname,RelVsn},
+	  {Relname,RelVsn},
 	  {erts,ErtsVsn},
 	  _Apps
-	 }]} = file:consult(Relfile),
+	 }]} = consult(Relfile),
 
     file:make_dir("rts"),
     
@@ -57,14 +59,15 @@ create_rel([Relfile]) ->
     {ok,Bin} = file:read_file("rts/bin/start"),
     cmd("chmod +w rts/bin/start",[]),
     Str = binary_to_list(Bin),
-    RootStr = re:replace(Str,"ROOTDIR=[^\\n]*",
-			 io_lib:format("ROOTDIR=~s",[element(2,file:get_cwd())++"/rts"]),
-			 [{return,list}]),
+    RootStr = re:replace(Str,"ROOTDIR=[^\\n]*","ROOTDIR=`pwd`",[{return,list}]),
     DaemonStr = re:replace(RootStr,"-daemon [^$]*","-daemon $ROOTDIR/pipes/ ",
 			   [{return,list}]),
-    
-    {ok,StartDev} = file:open("rts/bin/start",[write]),
-    io:fwrite(StartDev,DaemonStr,[]),
+    NameStr = re:replace(DaemonStr,"\\$START_ERL_DATA",
+			 "$START_ERL_DATA -sname "++Relname++" -setcookie "++Relname,
+			 [{return,list}]),
+
+    {ok,StartDev} = open("rts/bin/start",[write]),
+    io:fwrite(StartDev,NameStr,[]),
     file:sync(StartDev),
     file:close(StartDev),
 
@@ -76,19 +79,18 @@ create_rel([Relfile]) ->
     file:make_dir("rts/log"),
 
     %% create some files
-    
-    {ok,StartDataDev} = file:open("rts/releases/start_erl.data",[write]),
+    {ok,StartDataDev} = open("rts/releases/start_erl.data",[write]),
     io:format(StartDataDev,"~s ~s",[ErtsVsn,RelVsn]),
     file:sync(StartDataDev),
     file:close(StartDataDev),
 
-    {ok,SysConfigDev} = file:open("rts/releases/"++RelVsn++"/sys.config",[write]),
+    {ok,SysConfigDev} = open("rts/releases/"++RelVsn++"/sys.config",[write]),
     io:format(SysConfigDev,"[].",[]),
     file:sync(SysConfigDev),
     file:close(SysConfigDev),
     
 
-    
+    cmd("chmod -R 755 rts",[]),
     
     ok.
 
@@ -115,7 +117,7 @@ update_rel([Relfile]) ->
 	  {Relname,RelVsn},
 	  {erts,ErtsVsn},
 	  Apps
-	 }]} = file:consult(Relfile),
+	 }]} = consult(Relfile),
     
     UpdatedApps = [get_app_vsn(App) || App <- Apps],
     
@@ -128,7 +130,7 @@ update_rel([Relfile]) ->
 		     end,
     UpdatedRelVsn = RelVsn,
     
-    {ok,D} = file:open(Relfile,[write]),
+    {ok,D} = open(Relfile,[write]),
     io:fwrite(D,"~p.",[{release,{Relname,UpdatedRelVsn},
 			{erts,UpdatedErtsVsn},
 			UpdatedApps}]),
@@ -150,10 +152,10 @@ get_app_vsn({AppName,OldVsn}) ->
 	    {AppName,OldVsn}
     end.
 get_app_vsn(AppName,OldVsn) when is_atom(AppName),is_list(OldVsn) ->
-    case lists:keysearch(AppName,1,application:loaded_applications()) of
-	{value, {AppName,_AppDescr,OldVsn}} ->
+    case lists:keyfind(AppName,1,application:loaded_applications()) of
+	{AppName,_AppDescr,OldVsn} ->
 	    {AppName,OldVsn};
-	{value, {AppName,_AppDescr,NewVsn}} ->
+	{AppName,_AppDescr,NewVsn} ->
 	    info("Updating version of ~p from ~p to ~p\n",[AppName,OldVsn,NewVsn]),
 	    {AppName,NewVsn}
     end.
@@ -180,18 +182,19 @@ find_ebin([],_,_Fun) ->
     ok.
 
 update_appfile(EbinPath) ->
-    ["ebin",AppNameStr|_] = lists:reverse(string:tokens(EbinPath,"/")),
+    ["ebin",AppNameStr0|_] = lists:reverse(string:tokens(EbinPath,"/")),
+    AppNameStr = hd(string:tokens(AppNameStr0,"-")),
     AppFile = EbinPath++"/"++AppNameStr++".app",
     dbg("AppFile = ~p\n",[AppFile]),
-    {ok,[{application,AppName,AppData}]} = file:consult(AppFile),
-    NewModules = get_modules(EbinPath,lists:keysearch(modules,1,AppData),AppName),
+    {ok,[{application,AppName,AppData}]} = consult(AppFile),
+    NewModules = get_modules(EbinPath,lists:keyfind(modules,1,AppData),AppName),
     NewAppData = lists:keyreplace(modules,1,AppData,{modules,NewModules}),
-    {ok,Dev} = file:open(AppFile,[write]),
+    {ok,Dev} = open(AppFile,[write]),
     io:fwrite(Dev,"~p.",[{application,AppName,NewAppData}]),
     file:sync(Dev),
     file:close(Dev).
 
-get_modules(Dir,{value,OldMods},AppName) ->
+get_modules(Dir,OldMods,AppName) ->
     {ok,Files} = file:list_dir(Dir),
     NewMods = [list_to_atom(ModName) ||
 		  [ModName,End] <- [string:tokens(File,".") || File <- Files],
@@ -225,8 +228,16 @@ date_to_string({{YY,MM,DD},{HH,Mi,SS}}) ->
     lists:flatten(io_lib:format("~p~p~pT~p~p~p",[YY,MM,DD,HH,Mi,SS])).
 
 
-dbg(_Str,_Args) ->
-    ok.
+consult(Str) ->
+    dbg("Trying to open ~s\n",[Str]),
+    file:consult(Str).
+
+open(Str,Args) ->
+    dbg("Trying to open ~s\n",[Str]),
+    file:open(Str,Args).
+
+dbg(Str,Args) ->
+    io:format("Debug: "++Str,Args).
 
 info(Str,Args) ->
     io:format("Info: "++Str,Args).

@@ -2,7 +2,9 @@ APPNAME=friendfs
 
 DIRS = friendfs/src
 
-all: fuserl/README subdirs
+export ERL_COMPILE_FLAGS= -pa $(PWD)/fuserl/ebin
+
+all: subdirs
 
 fuserl/README: .gitmodules
 	git submodule update --init fuserl
@@ -23,12 +25,12 @@ docs:
 rts:
 	mkdir rts
 
-deploy: all update_rel rts
+deploy: all rel
 	escript  runtime.escript create_tar friendfs.rel
 	cp friendfs.tar.gz rts
 	(cd rts && tar xvzf friendfs.tar.gz)
 
-rel: update_rel
+rel: update_rel rts
 	escript  runtime.escript create_rel friendfs.rel
 
 update_rel: friendfs.rel
