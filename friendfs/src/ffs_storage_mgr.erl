@@ -1,5 +1,5 @@
 %% Storage Manager
--module(ffs_storeage_mgr).
+-module(ffs_storage_mgr).
 -behavour(gen_server).
 
 %% Storage methods

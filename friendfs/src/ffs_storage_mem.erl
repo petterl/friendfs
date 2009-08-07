@@ -1,35 +1,31 @@
 %% Localhost storage
 %%
 %% Uses the local file system to stora a file
--module(ffsstore_local).
+-module(ffs_storage_mem).
 -behaviour(gen_server).
 
 -export([init/1, handle_call/3, handle_cast/2]).
 -export([terminate/2, code_change/3, handle_info/2]).
 
--record(state,
-	{path   % Path of files
-	}).
-
 %% Gen server callback
-init(Args) ->
-    case lists:keysearch(path, 1, Args) of
-	{value, {path, Path}} ->    {ok, #state{path=Path}};
-	false -> {stop, path_missing_in_config}
-    end.
+init(_Args) ->
+    {ok, []}.
 
 handle_call({read, Cid}, _From, State) ->
-    Data = file:read_file(join(State#state.path, Cid)),
+    {ok, Data} = lists:keysearch(Cid, 1, State),
     {reply, Data, State};
+
 handle_call({write, Cid, Data}, _From, State) ->
-    Res = file:write_file(join(State#state.path, Cid), Data),
-    {reply, Res, State};
+    State1 = lists:keystore(Cid, 1, State, {Cid, Data}),
+    {reply, ok, State1};
+
 handle_call(list, _From, State) ->
-    Res = file:list_dir(State#state.path),
+    Res = lists:map(fun({K,_})->K end, State),
     {reply, Res, State};
+
 handle_call({delete, Cid}, _From, State) ->
-    Res = file:delete(join(State#state.path, Cid)),
-    {reply, Res, State}.
+    State1 = lists:keydelete(Cid, 1, State),
+    {reply, ok, State1}.
 
 handle_cast(stop, _State) ->
     {noreply, ok}.
@@ -43,7 +39,3 @@ terminate(_Reason, _State) ->
 handle_info({'EXIT', _Pid, _Reason}, State) ->
     {noreply, State}.
 
-
-%%% Help Functions
-join(Path, Filename) ->
-    filename:join(Path, Filename).
