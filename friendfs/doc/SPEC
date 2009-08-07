@@ -7,33 +7,113 @@ Config file
 %%% Define the stores used for the filesystem
 %%% Store can be of type: file, ftp, ssh
 %%%  
-{storage, [{ftp, "ftp.example.com", "user", "password", "/example/dir/"},
+{default, [{ftp, "ftp.example.com", "user", "password", "/example/dir/"},
 	   {ssh, "example.com", "user", "password", "/home/fs/dir"},
 	   {file, "/var/local/fs"}}.
+
+{homedir, [{file, "/var/local/homedir.ffs"}]}.
 
 %%% Crypt data
 {gnupg, {key, "0xEF8S82332"}}.
 
-Filesystem
+------------
+
+But it will be updated to be:
+
+default=home
+gnupgkey=0xEF8S82332
+
+[home]
+comment=Home directory
+storage=ftp://user@password:ftp.example.com/example/dir/
+storage=ssh://user:password@example.com/home/fs/dir
+storage=file://var/local/fs
+ratio=4
+
+Controlling the Daemon
+======================
+
+The daemon needs to be started to connect new mountpoints
+If a mount is initiated the daemon will be started in the process 
+if not started before.
+
+Starting the daemon is done by running 
+  friendfsctl start 
+If you want a specific config file you can add: 
+  --config=path/friendfs.conf
+  (/etc/friendfs.conf is defult)
+
+You can also check the status of the system with
+  friendfsctl status
+
+Status gives information about the storages status and the stored amount on
+each. It also gives information about the scheduler and how the file ratio 
+is holding up. Maybe also information about files with low ratio.
+
+
+Mounting a filesystem
+=====================
+You can mount a filesystem with this command if you are root:
+  mount -t fuse friendfs /mnt/fs -o fs=home
+
+or as a normal user:
+  friendfs /mnt/fs -o fs=home
+
+This will connect to the filesystem with the name fs ans mount it in
+the mountpoint.
+
+Architecture
+=-=-=-=-=-=-
+
+Mountpoint ffs_mountpoint
+========== 
+
+The FUSE interaction module, handles connection beween FUSE and the 
+filesystem.
+
+One process per mountpoint connected to a specific filesystem.
+
+Filesystem ffs_filesystem
 ==========
-Handle file system and file -> chunk relation
+Handle file system 
 
-Write a Chunk to n Stores
-Read Chunk from closest Store
+Contains information about the file allocation table and file -> chunk relation
+Connects all needed Storages from config file for filesystem and
+verify the filesystem before making it accessible.
+
+One process per filesystem defined in config file.
+
+chunk_ratio(Chunk) -> int()
+
+Storage Manager ffs_storage_mgr
+===============
+Handles all storages and prioritise between storages at read and write.
+Encrypt and decrypts all data.
+Schedule storage list checks with an interval, if a chunk is removed,
+verify chunk, which will store it to new storages if needed.
+If a storage is disconnected verify all chunks that was on that storage.
+
+list() -> [Storage]
+connect(Storage)
+disconnect(Storage)
+list_chunks(Storage) -> [Chunk]
+read(Chunk) -> Data
+write(Chunk, Ratio, Data)  
+verify_chunk(Chunk, Ratio) -> {ok, Ratio} | {error, chunk_not_accessible}
+
+All writes are put in a prioritized queue, the first write of a chunk is always
+prioritized.
+
+One process.
+
+Storage ffs_storage_*
+=======
+Handles datastorage of chunks
+
+connect(Storage)
+disconnect(Storage)
+list() -> [Shunks]
+read(Chunk) -> Data
+write(Chunk, Data)
 
 
-StorageMgr
-==========
-List all Stores
-Connect a Store 
-Disconnection of Store
-List Chunks in Store
-Fetch Chunk
-Write Chunk
-
-Store
-=====
-Connect to a datastore
-List Chunks in datastore
-Fetch Chunk
-Write Chunk
