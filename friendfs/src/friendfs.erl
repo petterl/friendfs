@@ -4,7 +4,7 @@
            start/2,
            stop/0,
            stop/1,
-	   add_config/1]).
+	   add_config/2]).
 
 %-=====================================================================-
 %-                        application callbacks                        -
@@ -38,6 +38,6 @@ stop () ->
 stop(_State) ->
   ok.
 
-add_config(Arg) ->
-    io:format("Adding a new mount point! Config = ~p\n",[Arg]).
+add_config(MountPoint,Opts) ->
+    io:format("Adding a new mount point!\n  Config = ~p with config ~p\n",[MountPoint,Opts]).
     
