@@ -59,11 +59,12 @@ create_rel([Relfile]) ->
     {ok,Bin} = file:read_file("rts/bin/start"),
     cmd("chmod +w rts/bin/start",[]),
     Str = binary_to_list(Bin),
-    RootStr = re:replace(Str,"ROOTDIR=[^\\n]*","ROOTDIR=`pwd`",[{return,list}]),
+    RootStr = re:replace(Str,"ROOTDIR=[^\\n]*","BINDIR=`pwd`/`dirname $0`\nROOTDIR=`dirname $BINDIR`",[{return,list}]),
     DaemonStr = re:replace(RootStr,"-daemon [^$]*","-daemon $ROOTDIR/pipes/ ",
 			   [{return,list}]),
     NameStr = re:replace(DaemonStr,"\\$START_ERL_DATA",
-			 "$START_ERL_DATA -sname "++Relname++" -setcookie "++Relname,
+			 "$START_ERL_DATA -pa $ROOTDIR/patches/ -sname "++Relname
+			 ++" -setcookie "++Relname,
 			 [{return,list}]),
 
     {ok,StartDev} = open("rts/bin/start",[write]),
@@ -77,7 +78,8 @@ create_rel([Relfile]) ->
     file:make_dir("rts/releases"),
     file:make_dir("rts/releases/"++RelVsn),
     file:make_dir("rts/log"),
-
+    file:make_dir("rts/patches"),
+    
     %% create some files
     {ok,StartDataDev} = open("rts/releases/start_erl.data",[write]),
     io:format(StartDataDev,"~s ~s",[ErtsVsn,RelVsn]),
