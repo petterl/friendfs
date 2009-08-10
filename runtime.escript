@@ -1,6 +1,7 @@
 
 main(Args) ->
     find_ebin(fun code:add_patha/1),
+    load_makeconfig(),
     case hd(Args) of
 	"update_rel" ->
 	    update_rel(tl(Args));
@@ -224,6 +225,18 @@ compare_mods(New,{modules,Old},AppName) ->
 			      ok
 		      end
 	      end,Old).
+
+%%%%%%%%%%%%%%%%%%%5
+%%%  parse Makefile.config functions
+%%%%%%%%%%%%%%%%%%%5
+load_makeconfig() ->
+    case file:consult("Makefile.config") of
+	{ok,[Actions]}  ->
+	    [apply(M,F,A) || {M,F,A} <- Actions];
+	_Else ->
+	    ok
+    end.
+     
 
 
 %%% General functions!

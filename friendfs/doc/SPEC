@@ -1,34 +1,97 @@
 friendfs
 
 Config file
-===========
-%%% Storage configuration
-%%%
-%%% Define the stores used for the filesystem
-%%% Store can be of type: file, ftp, ssh
-%%%  
-{default, [{ftp, "ftp.example.com", "user", "password", "/example/dir/"},
-	   {ssh, "example.com", "user", "password", "/home/fs/dir"},
-	   {file, "/var/local/fs"}}.
+============
+We might want to make a yecc parser for tokanizing the configuration stuff.
 
-{homedir, [{file, "/var/local/homedir.ffs"}]}.
+### Storage configuration
+###
+### Define the stores used for the filesystem
+### Store can be of type: file, ftp, ssh etc
+###  
 
-%%% Crypt data
-{gnupg, {key, "0xEF8S82332"}}.
+Default home
+Gnupgkey 0xEF8S82332
 
-------------
+# This is the home directory filesystem
+<Filesystem home>
+  Comment "Home directory"
+  Storage ftp://user@password:ftp.example.com/example/dir/
+  Storage ssh://user:password@example.com/home/fs/dir
+  Storage filestore
+  Ratio 4
+</Filesystem>
 
-But it will be updated to be:
+<Filesystem pictures>
+  Comment "Pictures directory"
+  Storage ftp://user@password:ftp.example.com/example/dir/
+  Storage filestore
+  Ratio 4
+</Filesystem>
 
-default=home
-gnupgkey=0xEF8S82332
+<Storage filestore>
+  Path file://var/local/fs
+  Prio 10
+  Polling 30000
+</Storage>
 
-[home]
-comment=Home directory
-storage=ftp://user@password:ftp.example.com/example/dir/
-storage=ssh://user:password@example.com/home/fs/dir
-storage=file://var/local/fs
-ratio=4
+which will be translated into this internal erlang representation:
+
+[{'Default',"home"},
+ {'Gnupgkey',"0xEF8S82332"},
+ {'Filesystem',"home",
+   [{'Comment',"Home directory"},
+    {'Storage',"ftp://user@password:ftp.example.com/example/dir/"},
+    {'Storage',"ssh://user:password@example.com/home/fs/dir"},
+    {'Storage',"filestore"},
+    {'Ratio',4}]
+ },
+ {'Filesystem',"pictures",
+  [{'Comment',"Pictures directory"},
+   {'Storage',"ftp://user@password:ftp.example.com/example/dir/"},
+   {'Storage',"filestore"},
+   {'Ratio',4}]},
+ {'Storage',"filestore",
+  [{'Path',"file://var/local/fs"},
+   {'Prio',10},
+   {"Polling",30000}]}
+]
+
+We might also want to make it possible to do the following:
+
+<Filesystem pictures>
+  Comment "Pictures directory"
+  <Storage>
+    Path ftp://user@password:ftp.example.com/example/dir/
+  </Storage>
+</Filesystem>
+
+which would result in this internal rep:
+
+[{'Filesystem',"pictures",
+  [{'Comment',"Pictures directory"},
+   {'Storage',"",
+    [{'Path',"ftp://user@password:ftp.example.com/example/dir/"},
+     {'Polling',40000}]},
+   {'Ratio',4}]}
+]
+
+The default values in the above examples would be taken from the file called
+friendfs/priv/default.config. It looks like this:
+
+<Filesystem>
+  Comment "No comment"
+  Ratio 4
+</Filesystem>
+
+<Storage>
+  Path $mandatory
+  Prio 10
+  Polling 30000
+</Storage>
+
+hopefully most of it is pretty self explanatory.
+
 
 Controlling the Daemon
 ======================
