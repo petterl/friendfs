@@ -7,8 +7,8 @@
 -module(friendfs_lib).
 
 
--export([split_url/1]).
-
+-export([split_url/1,parse_config/2,parse_config/1,scan_config_str/2]).
+-define(DELIMS,[$ ,$\n,$#,$>,$<,$\t]).
 
 split_url(Url) ->
     {Scheme, Url1} = urlsplit_scheme(Url),
@@ -90,3 +90,71 @@ urlsplit_query("#" ++ Rest, Acc) ->
     {lists:reverse(Acc), Rest};
 urlsplit_query([C | Rest], Acc) ->
     urlsplit_query(Rest, [C | Acc]).
+
+%% @spec parse_config(Config,Defaults) -> [{key,value}|{key,value,list}]
+%% @doc Parses a config file and uses Defaults to fill in the blanks.
+%%
+parse_config(Config,Defaults) ->
+	ErlDefaults = parse_defaults(Defaults),
+	ErlConfig = parse_config(Config),
+	validate_and_fill(ErlConfig,ErlDefaults).
+	
+parse_config(Path) ->
+	case file:read_file(Path) of
+		{ok,Bin} -> 
+			Scan = scan_config_str(binary_to_list(Bin),1),
+			ffs_config:parse(Scan);
+		Error -> {error,?MODULE,parse_config,Error}
+	end.
+	
+parse_defaults(Path) ->
+	[].
+	
+validate_and_fill(Config,Def) ->
+	Config.
+	
+scan_config_str([$#|T],Line) ->
+	{Comment,Tail} = read_until_chars(T,[$\n]),
+	[{comment,Line,Comment}|scan_config_str(Tail,Line)];
+scan_config_str([$<,$/|T],Line) ->
+	[{'</',Line}|scan_config_str(T,Line)];	
+scan_config_str([$<|T],Line) ->
+	[{'<',Line}|scan_config_str(T,Line)];	
+scan_config_str([$>|T],Line) ->
+	[{'>',Line}|scan_config_str(T,Line)];
+scan_config_str([$\n|T],Line) ->
+	scan_config_str(T,Line+1);
+scan_config_str([Char|T],Line) when Char == $\t; Char == $ ->
+	scan_config_str(T,Line);
+scan_config_str([Char|T],Line) when Char > $A, Char < $Z ->
+	{Key,Tail} = read_until_chars([Char|T],?DELIMS),
+	[{key,Line,Key}|scan_config_str(Tail,Line)];
+scan_config_str([$",Char|T],Line) when Char > $A, Char > $Z ->
+	{Key,[_|Tail]} = read_until_chars([Char|T],[$"]),
+	[{key,Line,Key}|scan_config_str(Tail,Line)];
+scan_config_str([$",Char|T],Line) ->
+	{Value,[_|Tail]} = read_until_chars([Char|T],[$"]),
+	[{value,Line,Value}|scan_config_str(Tail,Line)];	
+scan_config_str([Char|T],Line) ->
+	{Value,Tail} = read_until_chars([Char|T],?DELIMS),
+	[{value,Line,make_int(Value)}|scan_config_str(Tail,Line)];
+scan_config_str([],Line) ->
+	[{'$end',Line}].
+	
+read_until_chars(String,Chars) ->
+	read_until_chars(String,Chars,[]).
+read_until_chars([Char|T],Chars,Acc) ->
+	case lists:member(Char,Chars) of
+		true ->
+			{lists:reverse(Acc),[Char|T]};
+		_Else ->
+			read_until_chars(T,Chars,[Char|Acc])
+	end;
+read_until_chars([],_Chars,Acc) ->
+	{lists:reverse(Acc),[]}.
+	
+make_int(Int) ->
+	case catch list_to_integer(Int) of
+		{'EXIT',{badarg,_}} -> Int;
+		RealInt -> RealInt
+	end.
