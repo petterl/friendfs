@@ -4,4 +4,6 @@ friendfs.script
 friendfs.tar.gz
 rts
 rts.backup
+erl_crash.dump
 *~
+*#
