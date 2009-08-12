@@ -1,10 +1,10 @@
 APPNAME=friendfs
 
-DIRS=friendfs/src
+DIRS=lib/fuserl-2.0.5/src lib/friendfs-0.1.0/src
 ROOTDIR=`pwd`
 
 ## If fuserl is not install centrally look for it in a subdir this project
-export ERL_COMPILE_FLAGS += -pa $(PWD)/fuserl/ebin/
+export ERL_COMPILE_FLAGS += -pa $(PWD)/lib/fuserl-2.0.5/ebin/
 export ERL_COOKIE=friendfs
 export ERL_SNAME=friendfs
 export ERL_RUNTIME=$(PWD)/rts/

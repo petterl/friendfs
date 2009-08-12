@@ -1,0 +1,7 @@
+{application,fuserl,
+             [{description,"Erlang FUSE binding Erlang code."},
+              {vsn,"2.0.5"},
+              {modules,[fuserlsrv,fuserlportable,fuserlcodec,fuserl]},
+              {registered,[]},
+              {applications,[kernel,stdlib]},
+              {env,[{fuserldrvprefix,"/home/qluclar/packages/"}]}]}.
