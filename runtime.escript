@@ -170,7 +170,9 @@ find_ebin(Fun) ->
     {ok,Dirs} = file:list_dir("."),
     find_ebin(Dirs,"./",Fun).
 find_ebin(["rts"|Tail],Prefix,Fun) ->
-    find_ebin(Tail,Prefix,Fun);	
+    find_ebin(Tail,Prefix,Fun);
+find_ebin(["fuserl"|Tail],Prefix,Fun) ->
+    find_ebin(Tail,Prefix,Fun);
 find_ebin(["ebin"|_Tail],Prefix,Fun) ->
     Fun(Prefix++"ebin");
 find_ebin([Dir|Tail],Prefix,Fun) ->
@@ -188,10 +190,13 @@ find_ebin([],_,_Fun) ->
 update_appfile(EbinPath) ->
     ["ebin",AppNameStr0|_] = lists:reverse(string:tokens(EbinPath,"/")),
     AppNameStr = hd(string:tokens(AppNameStr0,"-")),
+    SrcPath = re:replace(EbinPath,"ebin","src",[{return,list}]),
+    AppSrcFile = SrcPath++"/"++AppNameStr++".app",
     AppFile = EbinPath++"/"++AppNameStr++".app",
-    dbg("AppFile = ~p\n",[AppFile]),
-    {ok,[{application,AppName,AppData}]} = consult(AppFile),
+    dbg("AppFile = ~p\n",[AppSrcFile]),
+    {ok,[{application,AppName,AppData}]} = consult(AppSrcFile),
     NewModules = get_modules(EbinPath,lists:keyfind(modules,1,AppData),AppName),
+    info("Updating ~s\n",[AppFile]),
     NewAppData = lists:keyreplace(modules,1,AppData,{modules,NewModules}),
     {ok,Dev} = open(AppFile,[write]),
     io:fwrite(Dev,"~p.",[{application,AppName,NewAppData}]),
@@ -212,7 +217,7 @@ compare_mods(New,{modules,Old},AppName) ->
     lists:map(fun(NewMod) ->
 		      case lists:member(NewMod,Old) of
 			  false ->
-			      info("~p was added to ~p.app\n",[NewMod,AppName]);
+			      dbg("~p was added to ~p.app\n",[NewMod,AppName]);
 			  _Else ->
 			      ok
 		      end
@@ -220,7 +225,7 @@ compare_mods(New,{modules,Old},AppName) ->
     lists:map(fun(OldMod) ->
 		      case lists:member(OldMod,New) of
 			  false ->
-			      info("~p was removed from ~p.app\n",[OldMod,AppName]);
+			      dbg("~p was removed from ~p.app\n",[OldMod,AppName]);
 			  _Else ->
 			      ok
 		      end

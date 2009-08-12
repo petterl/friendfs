@@ -22,11 +22,12 @@ start(Type) ->
 %% @hidden
 
 start(_Type, _Args) ->
-    { ok, LinkedIn } = application:get_env(friendfs, linked_in),
-    { ok, MountPoint } = application:get_env(friendfs, mount_point),
-    { ok, MountOpts } = application:get_env (friendfs, mount_opts),
+%    { ok, LinkedIn } = application:get_env(friendfs, linked_in),
+%    { ok, MountPoint } = application:get_env(friendfs, mount_point),
+%   { ok, MountOpts } = application:get_env (friendfs, mount_opts),
 
-    friendfs_sup:start_link(LinkedIn, MountPoint, MountOpts).
+%    friendfs_sup:start_link(LinkedIn, MountPoint, MountOpts),
+    {ok,self()}.
 
 %% @hidden
 
@@ -39,5 +40,11 @@ stop(_State) ->
   ok.
 
 add_config(MountPoint,Opts) ->
+    { ok, LinkedIn } = application:get_env(friendfs, linked_in),
+    { ok, MountOpts } = application:get_env (friendfs, mount_opts),
+    %% Beacuse friendfs is started with start_link it will crash when
+    %% the mounting process finsishes at the moment. But it is all work in
+    %% progress!
+    friendfs_sup:start_link(LinkedIn, MountPoint, MountOpts),
     io:format("Adding a new mount point!\n  Config = ~p with config ~p\n",[MountPoint,Opts]).
     

@@ -5,5 +5,6 @@ friendfs.tar.gz
 rts
 rts.backup
 erl_crash.dump
+friendfs/ebin/friendfs.app
 *~
 *#
