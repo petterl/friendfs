@@ -18,8 +18,15 @@ clean:
 	rm -f $(OBJECTS)
 
 $(EBIN)/%.beam:%.erl
-	erlc -pa $(EBIN) -W $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+	@echo "Compiling and loading $<"
+	@erlc -pa $(EBIN) -W $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+#	@echo "Copy to $(ERL_RUNTIME)/patches and load into VM if running"
+	@cp $@ $(ERL_RUNTIME)/patches/
+	@$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
+		"code purge [$(basename $<)]" > /dev/null
+	@$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
+		"code load_file [$(basename $<)]" > /dev/null
 
 %.erl:%.yrl
-	erl -noshell -s yecc file $< -s init stop
+	@erl -noshell -s yecc file $< -s init stop > /dev/null
 

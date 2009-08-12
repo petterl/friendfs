@@ -25,7 +25,7 @@
 #---------------------------------------------------------------------
 
 is_alive () {
-  epmd -names 2>/dev/null | grep "^name $1 at port " >/dev/null 2>/dev/null || false
+  epmd -names 2>/dev/null | grep "^name $appname at port " > /dev/null 2>/dev/null || false
 }
 
 optional () {
@@ -60,8 +60,7 @@ forbidden () {
 
 start () {
   local prefix=`dirname $0`
-  echo $prefix
-  `$prefix/start`
+  $prefix/start
 
 }
 
@@ -78,8 +77,8 @@ if [ ! -d "$mount_point" ]; then
    	exit 1;
 fi
 
-HEART_COMMAND="'$0' '$1' '$2' '$3'"
-export HEART_COMMAND
+#HEART_COMMAND="'$0' '$1' '$2' '$3'"
+#export HEART_COMMAND
 
 #cookie=`optional -setcookie "$appvars" friendfs`
 #name=`optional -name "$appvars" friendfs`
@@ -88,10 +87,8 @@ if ! is_alive "$name"
   then
     echo "$appname: The erlang VM is not running, starting it!"
     start
-    exit 1;
   fi
 
-exit 1;
 #forbidden -friendfs::mount_point "$appvars"
 #forbidden -friendfs::mount_opts "$appvars"
 
@@ -111,11 +108,15 @@ export PATH
 
 # if you uncomment all this stuff, you can get a better grip for debugging
 #
-touch /tmp/sux
-touch /tmp/sux.err
-exec 1>>/tmp/sux
-exec 2>>/tmp/sux.err
+#touch /tmp/sux
+#touch /tmp/sux.err
+#exec 1>>/tmp/sux
+#exec 2>>/tmp/sux.err
 #
-(
-  erl -boot start_sasl -heart -noinput -noshell -setcookie "$cookie" -name $name -friendfs mount_point "\"$mount_point\"" -friendfs mount_opts "\"$mount_opts\"" -s friendfs &
-) &
+#(
+#  erl -boot start_sasl -heart -noinput -noshell -setcookie "$cookie" -name $name -friendfs mount_point "\"$mount_point\"" -friendfs mount_opts "\"$mount_opts\"" -s friendfs &
+#) &
+
+echo "Sending config!"
+ERL_CALL_ARGS="\"$mount_point\",\"$mount_opts\""
+erl_call -c friendfs -sname friendfs -a "friendfs add_config [$ERL_CALL_ARGS]"

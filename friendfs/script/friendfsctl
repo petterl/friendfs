@@ -1,13 +1,45 @@
 #!/bin/sh 
-[ -f /etc/friendsfs.conf ] && . /etc/friendsfs.conf
 
-[ "x" = "x$FRIENDFS_CTL_ERL_ARGS" ] && FRIENDFS_CTL_ERL_ARGS=${CTL_ERL_ARGS}
+FFS_ROOT=rts
+ERL_COOKIE=friendfs
+ERL_SNAME=friendfs
+ERL_CALL=erl_call
 
-exec erl \
-    -pa "`dirname $0`/../ebin" \
-    -noinput \
-    -hidden \
-    ${FREINDSFS_CTL_ERL_ARGS} \
-    -sname friendsfsctl$$ \
-    -s friendsfs_control \
-    -extra "$@"
+
+function start() {
+    $FFS_ROOT/bin/start
+}
+
+function stop() {
+    $ERL_CALL -c $ERL_COOKIE -sname $ERL_SNAME -a "init stop []"
+}
+
+function restart() {
+    stop
+    sleep 1
+    start
+}
+
+function connect() {
+    $FFS_ROOT/bin/to_erl $FFS_ROOT/pipes/
+}
+
+function help() {
+    echo "The valid commands are: "
+    echo "   start - start the friendfs daemon"
+    echo "   stop - stop the friendfs daemon"
+    echo "   restart - restart the friendfs daemon"
+    echo "   connect - connect to the friendfs daemon"
+    echo ""
+    echo "To mount a filesystem see 'friendfs'"
+}
+
+case $1 in
+    'start') start ;;
+    'stop') stop ;;
+    'restart') restart ;;
+    'connect') connect ;;
+    *) echo "$1 is not a valid command"
+       help ;;
+esac
+
