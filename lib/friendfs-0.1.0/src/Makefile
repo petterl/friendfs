@@ -16,23 +16,25 @@ MODULES := $(shell echo $(SOURCES:%.erl=%) | sed 's/ /,/g')
 OBJECTS=$(SOURCES:%.erl=$(EBIN)/%.beam) $(YRL_OBJECTS) $(APP_TARGET) $(APPUP_TARGET)
 
 
-all:$(OBJECTS) $(APP)
+all:$(EBIN) $(OBJECTS) $(APP)
 
+$(EBIN):
+	@mkdir $@
 
 $(OBJECTS): $(INCLUDES)
 
 clean:
-	rm -f $(OBJECTS) $(APP)
+	rm -fr $(OBJECTS) $(APP) $(EBIN)
 
 $(EBIN)/%.beam:%.erl
 	@echo "Compiling and loading $<"
 	@erlc -W $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 #	@echo "Copy to $(ERL_RUNTIME)/patches and load into VM if running"
 #	-@cp $@ $(ERL_RUNTIME)/patches/
-	-@$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
-		"code purge [$(basename $<)]" > /dev/null
-	-@$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
-		"code load_file [$(basename $<)]" > /dev/null
+	-@$(shell $(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
+		"code purge [$(basename $<)]" > /dev/null 2> /dev/null)
+	-@$(shell $(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
+		"code load_file [$(basename $<)]" > /dev/null 2> /dev/null)
 
 %.erl:%.yrl
 	@erl -noshell -s yecc file $< -s init stop > /dev/null

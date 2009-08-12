@@ -9,6 +9,12 @@ main(Args) ->
 	    create_rel(tl(Args));
 	"create_tar" ->
 	    create_tar(tl(Args));
+	"erl_root" ->
+		io:format(get_erl_root());
+	"get_erts_vsn" ->
+		io:format(get_erts_vsn());
+	"get_app_vsn" ->
+		io:format(get_application_vsn(tl(Args)));
 	Else ->
 	    info("~p is an unkown function!\n",[Else])
     end.
@@ -113,9 +119,7 @@ cmd(String,Args) ->
 
 update_rel([Relfile]) ->
 
-    info("Updating .rel file\n",[]),
-    
-    file:copy(Relfile,Relfile++".backup"),
+    dbg("Updating .rel file\n",[]),
     
     {ok,[{release,
 	  {Relname,RelVsn},
@@ -128,20 +132,18 @@ update_rel([Relfile]) ->
     UpdatedErtsVsn = case erlang:system_info(version) of
 			 ErtsVsn -> ErtsVsn;
 			 Other ->
-			     info("Updating Erts version from ~p to ~p\n",
+			     dbg("Updating Erts version from ~p to ~p\n",
 							     [ErtsVsn,Other]),
 			     Other
 		     end,
     UpdatedRelVsn = RelVsn,
     
-    {ok,D} = open(Relfile,[write]),
+    {ok,D} = open(re:replace(Relfile,"relSrc","rel",[{return,list}]),[write]),
     io:fwrite(D,"~p.",[{release,{Relname,UpdatedRelVsn},
 			{erts,UpdatedErtsVsn},
 			UpdatedApps}]),
     file:sync(D),
-    file:close(D),
-    
-    find_ebin(fun(Arg) -> update_appfile(Arg) end).
+    file:close(D).
 
 
 
@@ -187,50 +189,6 @@ find_ebin([Dir|Tail],Prefix,Fun) ->
 find_ebin([],_,_Fun) ->
     ok.
 
-update_appfile(EbinPath) ->
-    ["ebin",AppNameStr0|_] = lists:reverse(string:tokens(EbinPath,"/")),
-    AppNameStr = hd(string:tokens(AppNameStr0,"-")),
-    SrcPath = re:replace(EbinPath,"ebin","src",[{return,list}]),
-    AppSrcFile = SrcPath++"/"++AppNameStr++".app",
-    AppFile = EbinPath++"/"++AppNameStr++".app",
-    dbg("AppFile = ~p\n",[AppSrcFile]),
-    {ok,[{application,AppName,AppData}]} = consult(AppSrcFile),
-    NewModules = get_modules(EbinPath,lists:keyfind(modules,1,AppData),AppName),
-    info("Updating ~s\n",[AppFile]),
-    NewAppData = lists:keyreplace(modules,1,AppData,{modules,NewModules}),
-    {ok,Dev} = open(AppFile,[write]),
-    io:fwrite(Dev,"~p.",[{application,AppName,NewAppData}]),
-    file:sync(Dev),
-    file:close(Dev).
-
-get_modules(Dir,OldMods,AppName) ->
-    {ok,Files} = file:list_dir(Dir),
-    NewMods = [list_to_atom(ModName) ||
-		  [ModName,End] <- [string:tokens(File,".") || File <- Files],
-		  End == "beam"],
-    compare_mods(NewMods,OldMods,AppName),
-    NewMods.
-
-compare_mods(New,New,_AppName) ->
-    ok;
-compare_mods(New,{modules,Old},AppName) ->
-    lists:map(fun(NewMod) ->
-		      case lists:member(NewMod,Old) of
-			  false ->
-			      dbg("~p was added to ~p.app\n",[NewMod,AppName]);
-			  _Else ->
-			      ok
-		      end
-	      end,New),
-    lists:map(fun(OldMod) ->
-		      case lists:member(OldMod,New) of
-			  false ->
-			      dbg("~p was removed from ~p.app\n",[OldMod,AppName]);
-			  _Else ->
-			      ok
-		      end
-	      end,Old).
-
 %%%%%%%%%%%%%%%%%%%5
 %%%  parse Makefile.config functions
 %%%%%%%%%%%%%%%%%%%5
@@ -242,7 +200,22 @@ load_makeconfig() ->
 	    ok
     end.
      
+get_application_vsn([AppNameStr]) ->
+	AppName = list_to_atom(AppNameStr),
+	{ok,D} = open("log.log",[append]),
+	io:format(D,"Getting vsn of ~p\n",[AppName]),
+	file:sync(D),file:close(D),
+	application:load(AppName),
+	{value,{_,_,Vsn}} = lists:keysearch(AppName,1,application:loaded_applications()),
+	Vsn.
 
+get_erts_vsn() ->
+	erlang:system_info(version).
+
+get_erl_root() ->
+    KernelPath = code:which(kernel),
+    
+    hd(re:split(KernelPath,"lib/kernel",[{return,list}])).
 
 %%% General functions!
 date_to_string({{YY,MM,DD},{HH,Mi,SS}}) ->
@@ -257,6 +230,7 @@ open(Str,Args) ->
     dbg("Trying to open ~s\n",[Str]),
     file:open(Str,Args).
 
+dbg(_,_) -> ok;
 dbg(Str,Args) ->
     io:format("Debug: "++Str,Args).
 
