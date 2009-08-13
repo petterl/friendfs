@@ -10,12 +10,14 @@ ROOTDIR=`pwd`
 APPS:=$(shell cat friendfs.relSrc | sed 's/[\[{ ]*\([^,]*\).*/\1/' | grep -v release | grep -v erts | awk '{ printf "%s ", $$0 }')
 ERTS_VSN=$(shell escript $(RUNTIME) get_erts_vsn)
 
+
 ## If fuserl is not install centrally look for it in a subdir this project
 export ERL_COMPILE_FLAGS += -pa $(PWD)/lib/fuserl-2.0.5/ebin/ -pa $(PWD)/lib/friendfs-0.1.0/ebin/
 export ERL_COOKIE=friendfs
 export ERL_SNAME=friendfs
 export ERL_RUNTIME=$(PWD)/rts/
 export ERL_CALL=erl_call
+ERL=erl -boot start_clean $(ERL_COMPILE_FLAGS)
 
 all: subdirs
 
@@ -36,7 +38,7 @@ clean:
 	-rm -rf releases
 
 docs:
-	erl -noshell -eval "edoc:application($(APPNAME), \".\", [])" -s init stop
+	$(ERL) -noshell -eval "edoc:application($(APPNAME), \".\", [])" -s init stop
 
 rts:
 	mkdir rts
@@ -56,11 +58,11 @@ check_environment: erts-$(ERTS_VSN) $(APP_VSNS:%=lib/%) releases/$(REL_VSN)/frie
 
 
 releases/$(REL_VSN)/%.boot: %.script releases/$(REL_VSN)
-	@erl $(ERL_COMPILE_FLAGS) -noshell -s systools script2boot $(basename $<) -s init stop
+	@$(ERL) -noshell -s systools script2boot $(basename $<) -s init stop
 	mv $(subst script,boot,$<) $@
 
 %.script: %.rel
-	@erl $(ERL_COMPILE_FLAGS) -noshell -s systools make_script $(basename $<) -s init stop
+	@$(ERL) -noshell -s systools make_script $(basename $<) -s init stop
 
 %.rel: %.relSrc
 	@echo "Updating $@"
