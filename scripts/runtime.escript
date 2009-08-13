@@ -202,9 +202,6 @@ load_makeconfig() ->
      
 get_application_vsn([AppNameStr]) ->
 	AppName = list_to_atom(AppNameStr),
-	{ok,D} = open("log.log",[append]),
-	io:format(D,"Getting vsn of ~p\n",[AppName]),
-	file:sync(D),file:close(D),
 	application:load(AppName),
 	{value,{_,_,Vsn}} = lists:keysearch(AppName,1,application:loaded_applications()),
 	Vsn.
