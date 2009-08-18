@@ -1,3 +1,4 @@
+#!/usr/bin/env escript
 
 main(Args) ->
     find_ebin(fun code:add_patha/1),
@@ -40,7 +41,7 @@ create_rel([Relfile]) ->
     cmd("cp rts rts.backup/~s",[date_to_string(calendar:local_time())]),
 
 
-    
+
     {ok,[{release,
 	  {Relname,RelVsn},
 	  {erts,ErtsVsn},
@@ -48,11 +49,11 @@ create_rel([Relfile]) ->
 	 }]} = consult(Relfile),
 
     file:make_dir("rts"),
-    
+
     %% Figure out where to copy erts from
 
     KernelPath = code:which(kernel),
-    
+
     [PathtoRuntime,_] = re:split(KernelPath,"lib/kernel",[{return,list}]),
 
     %% Copy erts
@@ -62,7 +63,7 @@ create_rel([Relfile]) ->
     cmd("cp -LR ~s rts/",[PathtoRuntime ++ "bin"]),
 
     %% Modify rts/bin/start
-    
+
     {ok,Bin} = file:read_file("rts/bin/start"),
     cmd("chmod +w rts/bin/start",[]),
     Str = binary_to_list(Bin),
@@ -86,7 +87,7 @@ create_rel([Relfile]) ->
     file:make_dir("rts/releases/"++RelVsn),
     file:make_dir("rts/log"),
     file:make_dir("rts/patches"),
-    
+
     %% create some files
     {ok,StartDataDev} = open("rts/releases/start_erl.data",[write]),
     io:format(StartDataDev,"~s ~s",[ErtsVsn,RelVsn]),
@@ -97,11 +98,11 @@ create_rel([Relfile]) ->
     io:format(SysConfigDev,"[].",[]),
     file:sync(SysConfigDev),
     file:close(SysConfigDev),
-    
+
     {ok,_} = file:copy("friendfs/script/friendfs","rts/bin/friendfs"),
-    
+
     cmd("chmod -R 755 rts",[]),
-    
+
     ok.
 
 
@@ -120,15 +121,15 @@ cmd(String,Args) ->
 update_rel([Relfile]) ->
 
     dbg("Updating .rel file\n",[]),
-    
+
     {ok,[{release,
 	  {Relname,RelVsn},
 	  {erts,ErtsVsn},
 	  Apps
 	 }]} = consult(Relfile),
-    
+
     UpdatedApps = [get_app_vsn(App) || App <- Apps],
-    
+
     UpdatedErtsVsn = case erlang:system_info(version) of
 			 ErtsVsn -> ErtsVsn;
 			 Other ->
@@ -137,7 +138,7 @@ update_rel([Relfile]) ->
 			     Other
 		     end,
     UpdatedRelVsn = RelVsn,
-    
+
     {ok,D} = open(re:replace(Relfile,"relSrc","rel",[{return,list}]),[write]),
     io:fwrite(D,"~p.",[{release,{Relname,UpdatedRelVsn},
 			{erts,UpdatedErtsVsn},
@@ -165,7 +166,7 @@ get_app_vsn(AppName,OldVsn) when is_atom(AppName),is_list(OldVsn) ->
 	    info("Updating version of ~p from ~p to ~p\n",[AppName,OldVsn,NewVsn]),
 	    {AppName,NewVsn}
     end.
-	
+
 
 
 find_ebin(Fun) ->
@@ -176,6 +177,7 @@ find_ebin(["rts"|Tail],Prefix,Fun) ->
 find_ebin(["fuserl"|Tail],Prefix,Fun) ->
     find_ebin(Tail,Prefix,Fun);
 find_ebin(["ebin"|_Tail],Prefix,Fun) ->
+    dbg("Running Fun in ~p~n", Prefix),
     Fun(Prefix++"ebin");
 find_ebin([Dir|Tail],Prefix,Fun) ->
     case file:read_file_info(Prefix++Dir) of
@@ -199,19 +201,25 @@ load_makeconfig() ->
 	_Else ->
 	    ok
     end.
-     
+
 get_application_vsn([AppNameStr]) ->
 	AppName = list_to_atom(AppNameStr),
+    dbg("Application: ~p~n", [AppName]),
 	application:load(AppName),
-	{value,{_,_,Vsn}} = lists:keysearch(AppName,1,application:loaded_applications()),
-	Vsn.
+    LoadedApps = application:loaded_applications(),
+    dbg("Applications: ~p~n", [LoadedApps]),
+
+	case lists:keysearch(AppName,1,LoadedApps) of
+    	{value,{_,_,Vsn}} -> Vsn;
+	    false -> ""
+	end.
 
 get_erts_vsn() ->
 	erlang:system_info(version).
 
 get_erl_root() ->
     KernelPath = code:which(kernel),
-    
+
     hd(re:split(KernelPath,"lib/kernel",[{return,list}])).
 
 %%% General functions!
