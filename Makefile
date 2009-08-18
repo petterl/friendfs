@@ -11,8 +11,8 @@ APPS:=$(shell cat friendfs.relSrc | sed 's/[\[{ ]*\([^,]*\).*/\1/' | grep -v rel
 ERTS_VSN=$(shell escript $(RUNTIME) get_erts_vsn)
 ERL_CALL=erl_call
 ERL=erl -boot start_clean $(ERL_COMPILE_FLAGS)
-ERL_COOKIE=friendfs
-ERL_SNAME=friendfs
+export ERL_COOKIE=friendfs
+export ERL_SNAME=friendfs
 ERL_RUNTIME=$(PWD)/rts/
 
 all: subdirs
