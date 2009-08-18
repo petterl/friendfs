@@ -211,8 +211,37 @@ get_application_vsn([AppNameStr]) ->
 
 	case lists:keysearch(AppName,1,LoadedApps) of
     	{value,{_,_,Vsn}} -> Vsn;
-	    false -> ""
+	    false -> check_for_appsrc(AppNameStr)
 	end.
+
+check_for_appsrc(AppNameStr) ->
+    {ok,Dirs} = file:list_dir("lib"),
+
+    find_app_vsn(Dirs,AppNameStr,[0]).
+
+%% Use this when appfile cannot be found. It does a listing of lib/ and then finds the app
+%% directory with the highest version number and uses that one.
+find_app_vsn([Dir|DirT],AppNameStr,HighVsn) ->
+    case re:split(Dir,"-",[{return,list}]) of
+	[AppNameStr,VsnStr] ->
+	    Vsn = [list_to_integer(Str) || Str <- string:tokens(VsnStr,".")],
+	    find_app_vsn(DirT,AppNameStr,compare_vsn(Vsn,HighVsn));
+	_Else ->
+	    find_app_vsn(DirT,AppNameStr,HighVsn)
+    end;
+find_app_vsn([],_AppNameStr,HighVsn) ->
+    integer_to_list(hd(HighVsn))++["."++integer_to_list(Int) || Int <- tl(HighVsn)].
+
+compare_vsn(NewVsn,HighVsn) ->
+    compare_vsn(NewVsn,HighVsn,[]).
+compare_vsn([New|NewT],[High|_HighT],Acc) when New > High ->
+    lists:reverse(Acc) ++ [New|NewT];
+compare_vsn([New|NewT],[New|HighT],Acc) ->
+    compare_vsn(NewT,HighT,[New|Acc]);
+compare_vsn([New|NewT],[],Acc) ->
+    lists:reverse(Acc) ++ [New|NewT];
+compare_vsn(_,High,Acc) ->
+    lists:reverse(Acc) ++ High.
 
 get_erts_vsn() ->
 	erlang:system_info(version).
