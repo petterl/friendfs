@@ -17,7 +17,7 @@ start_link () ->
 %% @hidden
 
 init([ ]) ->
-    
+
   {ok, {{one_for_one, 3, 10},
 	[]
        }
@@ -25,9 +25,14 @@ init([ ]) ->
 
 
 mount(LinkedIn,MountPoint,MountOpts) ->
-    FileSystem = 
+    FileSystem =
         {filesystem,
 	 {filesystem, start_link, [LinkedIn,MountPoint,MountOpts]},
 	 transient, 10000, worker, [filesystem]},
+    StorageSup =
+        {ffs_storage_sup,
+	 {ffs_storage_sup, start_link, []},
+	 transient, 10000, worker, [ffs_storage_sup]},
 
-    supervisor:start_child(?MODULE,FileSystem).
+    supervisor:start_child(?MODULE,FileSystem),
+    supervisor:start_child(?MODULE,StorageSup).

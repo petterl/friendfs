@@ -7,7 +7,7 @@
 %%% Verify atorage before making it availible
 %%%
 %%% @end
-%%% Created : 10 Aug 2009 by Petter Larsson <petter.larsson@ericsson.com>
+%%% Created : 10 Aug 2009 by Petter Larsson <petterl@lysator.liu.se>
 %%%-------------------------------------------------------------------
 -module(ffs_storage_mgr).
 
@@ -25,7 +25,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--define(SERVER, ?MODULE). 
+-define(SERVER, ?MODULE).
 
 -record(state, {storages = []}).
 
@@ -167,14 +167,14 @@ handle_call({read, ChunkId}, _From, State) ->
     {reply, Res, State};
 handle_call({write, Cid, _Ratio=all, Data}, _From, State) ->
     Res = lists:map(
-	    fun(#storage{pid = Pid}) -> 
+	    fun(#storage{pid = Pid}) ->
 		    gen_server:call(Pid, {write, Cid, Data}) end,
 	    State#state.storages),
     {reply, Res, State};
 handle_call({write, Cid, Ratio, Data}, _From, State) ->
     Storages = lists:sublist(State#state.storages, Ratio),
     Res = lists:map(
-            fun(#storage{pid = Pid}) -> 
+            fun(#storage{pid = Pid}) ->
                     gen_server:call(Pid, {write, Cid, Data}) end,
             Storages),
     {reply, Res, State};
