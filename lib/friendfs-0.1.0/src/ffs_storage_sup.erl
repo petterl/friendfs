@@ -32,7 +32,7 @@ start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 connect_storage(Mod, Args) ->
-    supervisor:start_child({local, ?SERVER}, [Mod, Args])
+    supervisor:start_child({local, ?SERVER}, [Mod, Args]).
 
 %%%===================================================================
 %%% supervisor callbacks
