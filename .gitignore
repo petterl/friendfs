@@ -3,6 +3,7 @@ friendfs.boot
 friendfs.rel.backup
 friendfs.script
 friendfs.tar.gz
+friendfs.rel
 rts
 rts.backup
 erl_crash.dump
@@ -10,3 +11,11 @@ erl_crash.dump
 *~
 *#
 .make.cache
+bin
+erts-*
+lib/kernel-*
+lib/runtime_tools-*
+lib/sasl-*
+lib/stdlib-*
+log
+releases
