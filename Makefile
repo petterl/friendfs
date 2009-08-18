@@ -26,13 +26,18 @@ clean:
 	@for d in $(DIRS); do \
 		(cd $$d; $(MAKE) clean); \
 	done
-	@rm -f $(APP_VSNS:%=lib/%)
+
+clean_environment:
 	@rm -f erts-$(ERTS_VSN)
 	@rm -f releases/$(REL_VSN)/$(APPNAME).boot
 	@rm -f $(APPNAME).rel
 	@rm -f $(APPNAME).script
 	@rm -rf releases
 	@rm -f .make.cache
+	@rm -rf pipes
+	@rm -rf logs
+	@rm -rf bin
+	@rm -f $(APP_VSNS:%=lib/%)
 
 docs:
 	$(ERL) -noshell -eval "edoc:application($(APPNAME), \".\", [])" -s init stop
@@ -51,10 +56,10 @@ rel: update_rel rts
 update_rel: friendfs.rel
 	escript runtime.escript update_rel $<
 
-check_environment: erts-$(ERTS_VSN) $(APP_VSNS:%=lib/%) releases/$(REL_VSN)/friendfs.boot releases/$(REL_VSN)/sys.config
+check_environment: erts-$(ERTS_VSN) $(APP_VSNS:%=lib/%) releases/$(REL_VSN)/start.boot releases/$(REL_VSN)/sys.config releases/start_erl.data bin pipes log
 
 
-releases/$(REL_VSN)/%.boot: %.script releases/$(REL_VSN)
+releases/$(REL_VSN)/%.boot: $(APPNAME).script releases/$(REL_VSN)
 	$(ERL) $(DIRS:%/src=-pz %/ebin) -noshell -s systools script2boot $(basename $<) -s init stop
 	mv $(subst script,boot,$<) $@
 
@@ -80,3 +85,24 @@ releases/$(REL_VSN): $(APPNAME).relSrc
 
 releases/$(REL_VSN)/sys.config: releases/$(REL_VSN) $(APPNAME).relSrc
 	echo "[]." > $@
+
+releases/start_erl.data: $(APPNAME).relSrc
+	echo "$(ERTS_VSN) $(REL_VSN)" > $@
+
+bin:
+	cp -r  $(shell escript $(RUNTIME) erl_root)/bin .
+	sed -e 's:ROOTDIR=[^\\n]*:BINDIR=`pwd`/`dirname $$0`\nROOTDIR=`dirname $$BINDIR`:' \
+	    -e 's:-daemon [^$$]*:-daemon $$ROOTDIR/pipes/ :' \
+	    -e 's:$$START_ERL_DATA:$$START_ERL_DATA -pa $$ROOTDIR/patches/ -sname $(APPNAME) -setcookie $(APPNAME):' $@/start > /tmp/start.erl
+	mv -f /tmp/start.erl $@/start
+	chmod +x $@/start
+#	RootStr = re:replace(Str,"ROOTDIR=[^\\n]*","BINDIR=`pwd`/`dirname $0`\nROOTDIR=`dirname $BINDIR`",[{return,list}]),
+#    DaemonStr = re:replace(RootStr,"-daemon [^$]*","-daemon $ROOTDIR/pipes/ ",
+#			   [{return,list}]),
+#    NameStr = re:replace(DaemonStr,"\\$START_ERL_DATA",
+#			 "$START_ERL_DATA -pa $ROOTDIR/patches/ -sname "++Relname
+#			 ++" -setcookie "++Relname,
+#			 [{return,list}]),
+
+pipes log:
+	mkdir -p $@

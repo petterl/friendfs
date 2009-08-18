@@ -1,6 +1,6 @@
 #!/bin/sh 
 
-FFS_ROOT=rts
+FFS_ROOT=.
 ERL_COOKIE=friendfs
 ERL_SNAME=friendfs
 ERL_CALL=erl_call
