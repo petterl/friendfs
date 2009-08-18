@@ -92,11 +92,8 @@ releases/start_erl.data: $(APPNAME).relSrc
 
 bin:
 	cp -r  $(shell escript $(RUNTIME) erl_root)/bin .
-	sed -e 's:ROOTDIR=[^\\n]*:BINDIR=`pwd`/`dirname $$0`\nROOTDIR=`dirname $$BINDIR`:' \
-	    -e 's:-daemon [^$$]*:-daemon $$ROOTDIR/pipes/ :' \
-	    -e 's:$$START_ERL_DATA:$$START_ERL_DATA -pa $$ROOTDIR/patches/ -sname $(APPNAME) -setcookie $(APPNAME):' $@/start > /tmp/start.erl
-	mv -f /tmp/start.erl $@/start
-	chmod +x $@/start
+	cp scripts/start_friendfs bin/
+	chmod +x $@/start_friendfs
 #	RootStr = re:replace(Str,"ROOTDIR=[^\\n]*","BINDIR=`pwd`/`dirname $0`\nROOTDIR=`dirname $BINDIR`",[{return,list}]),
 #    DaemonStr = re:replace(RootStr,"-daemon [^$]*","-daemon $ROOTDIR/pipes/ ",
 #			   [{return,list}]),

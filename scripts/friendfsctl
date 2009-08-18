@@ -7,7 +7,7 @@ ERL_CALL=erl_call
 
 
 function start() {
-    $FFS_ROOT/bin/start
+    $FFS_ROOT/bin/start_friendfs
 }
 
 function stop() {
