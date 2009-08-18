@@ -12,7 +12,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/0, connect_storage/2]).
 -export([init/1]).
 
 -define(SERVER, ?MODULE).
@@ -29,7 +29,10 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-    supervisor:start_link({local, ?SERVER}, []).
+    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+
+connect_storage(Mod, Args) ->
+    supervisor:start_child({local, ?SERVER}, [Mod, Args])
 
 %%%===================================================================
 %%% supervisor callbacks
@@ -41,8 +44,8 @@ start_link() ->
 %% Initiates the supervisor
 %%
 %%--------------------------------------------------------------------
-init(_Args) ->
-    {ok, {{simple_one_for_one, 0, 1},
-          [{call, {call, start_link, []},
-            temporary, brutal_kill, worker, [call]}]}}.
+init([]) ->
+    {ok, {{simple_one_for_one, 10, 10},
+          [{ffs_storage, {ffs_storage_mgr, connect_storage, []},
+            temporary, brutal_kill, worker, [ffs_storage_mgr]}]}}.
 

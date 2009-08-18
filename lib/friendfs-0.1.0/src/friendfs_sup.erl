@@ -17,11 +17,13 @@ start_link () ->
 %% @hidden
 
 init([ ]) ->
+    Storage =
+        {ffs_storage_sup,
+	        {ffs_storage_sup, start_link, []},
+	        permanent, infinity, worker, [ffs_storage_sup]},
 
-  {ok, {{one_for_one, 3, 10},
-	[]
-       }
-  }.
+    {ok, {{one_for_one, 3, 10},
+	    [Storage]}}.
 
 
 mount(LinkedIn,MountPoint,MountOpts) ->
@@ -29,10 +31,5 @@ mount(LinkedIn,MountPoint,MountOpts) ->
         {filesystem,
 	 {filesystem, start_link, [LinkedIn,MountPoint,MountOpts]},
 	 transient, 10000, worker, [filesystem]},
-    StorageSup =
-        {ffs_storage_sup,
-	 {ffs_storage_sup, start_link, []},
-	 transient, 10000, worker, [ffs_storage_sup]},
 
-    supervisor:start_child(?MODULE,FileSystem),
-    supervisor:start_child(?MODULE,StorageSup).
+    supervisor:start_child(?MODULE,FileSystem).
