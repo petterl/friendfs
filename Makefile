@@ -8,7 +8,7 @@ RUNTIME=$(SCRIPTS)/runtime.escript
 DIRS=lib/fuserl-2.0.5/src lib/friendfs-0.1.0/src
 ROOTDIR=`pwd`
 APPS:=$(shell cat friendfs.relSrc | sed 's/[\[{ ]*\([^,]*\).*/\1/' | grep -v release | grep -v erts | awk '{ printf "%s ", $$0 }')
-ERTS_VSN=$(shell escript $(RUNTIME) get_erts_vsn)
+ERTS_VSN ?= $(shell escript $(RUNTIME) get_erts_vsn)
 ERL_CALL=erl_call
 ERL=erl -boot start_clean $(ERL_COMPILE_FLAGS)
 export ERL_COOKIE=friendfs
@@ -73,8 +73,9 @@ releases/$(REL_VSN)/%.boot: $(APPNAME).script releases/$(REL_VSN)
 .make.cache: $(APPNAME).relSrc
 	@echo APP_VSNS=$(foreach app, $(APPS),$(app)-$(shell escript $(RUNTIME) get_app_vsn $(app))) > $@
 	@echo REL_VSN=$(shell cat friendfs.relSrc | grep '"$(APPNAME)"' | sed 's/.*$(APPNAME)","\([^"]*\).*/\1/') >> $@
+	@echo ERTS_VSN=$(shell escript $(RUNTIME) get_erts_vsn) >> $@
 
-erts-$(ERTS_VSN):
+erts-%:
 	ln -s $(shell escript $(RUNTIME) erl_root)$@
 
 $(APP_VSNS:%=lib/%):
