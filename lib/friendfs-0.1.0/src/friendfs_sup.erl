@@ -17,10 +17,10 @@ start_link () ->
 %% @hidden
 
 init([ ]) ->
-    Storage =
+    Storage = 
         {ffs_storage_sup,
 	        {ffs_storage_sup, start_link, []},
-	        permanent, infinity, worker, [ffs_storage_sup]},
+	        permanent, 10000, worker, [ffs_storage_sup]},
 
     {ok, {{one_for_one, 3, 10},
 	    [Storage]}}.
