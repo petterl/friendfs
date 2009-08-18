@@ -32,7 +32,7 @@ clean:
 	@rm -f $(APPNAME).rel
 	@rm -f $(APPNAME).script
 	@rm -rf releases
-	@rm -f .app.cache
+	@rm -f .make.cache
 
 docs:
 	$(ERL) -noshell -eval "edoc:application($(APPNAME), \".\", [])" -s init stop
@@ -55,11 +55,11 @@ check_environment: erts-$(ERTS_VSN) $(APP_VSNS:%=lib/%) releases/$(REL_VSN)/frie
 
 
 releases/$(REL_VSN)/%.boot: %.script releases/$(REL_VSN)
-	@$(ERL) -noshell -s systools script2boot $(basename $<) -s init stop
+	$(ERL) $(DIRS:%/src=-pz %/ebin) -noshell -s systools script2boot $(basename $<) -s init stop
 	mv $(subst script,boot,$<) $@
 
 %.script: %.rel
-	@$(ERL) -noshell -s systools make_script $(basename $<) -s init stop
+	$(ERL) $(DIRS:%/src=-pz %/ebin) -noshell -s systools make_script $(basename $<) -s init stop
 
 %.rel: %.relSrc
 	@echo "Updating $@"

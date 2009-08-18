@@ -1,7 +1,7 @@
 EBIN=../ebin
 INCLUDE=../include
 ERL_CALL=erl_call
-ERL_COMPILE_FLAGS += -pa ../../../lib/fuserl-2.0.5/ebin/ -pa ../../../lib/friendfs-0.1.0/ebin/
+ERL_COMPILE_FLAGS += -pz ../../../lib/fuserl-2.0.5/ebin/ -pz ../../../lib/friendfs-0.1.0/ebin/
 
 ERL_COMPILE_FLAGS += -I$(INCLUDE) +warn_unused_vars +nowarn_shadow_vars +warn_unused_import
 
