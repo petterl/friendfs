@@ -33,9 +33,11 @@ $(EBIN)/%.beam:%.erl
 #	@echo "Copy to $(ERL_RUNTIME)/patches and load into VM if running"
 #	-@cp $@ $(ERL_RUNTIME)/patches/
 	-$(shell $(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
-		"code purge [$(basename $<)]" > /dev/null 2> /dev/null )
+		"code purge [$(basename $<)]" > /tmp/log 2> /dev/null )
 	-$(shell $(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
-		"code load_file [$(basename $<)]"  > /dev/null 2> /dev/null )
+		"code delete [$(basename $<)]" >> /tmp/log 2> /dev/null )
+	-$(shell $(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
+		"code load_file [$(basename $<)]"  >> /tmp/log 2> /dev/null )
 
 %.erl:%.yrl
 	@erl -noshell -s yecc file $< -s init stop > /dev/null

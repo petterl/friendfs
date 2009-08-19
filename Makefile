@@ -7,7 +7,7 @@ RUNTIME=$(SCRIPTS)/runtime.escript
 
 DIRS=lib/fuserl-2.0.5/src lib/friendfs-0.1.0/src
 ROOTDIR=`pwd`
-APPS:=$(shell cat friendfs.relSrc | sed 's/[\[{ ]*\([^,]*\).*/\1/' | grep -v release | grep -v erts | awk '{ printf "%s ", $$0 }')
+APPS:=$(shell cat friendfs.relSrc | sed 's/[\[\t{ ]*\([^,]*\).*/\1/' | grep -v release | grep -v erts | awk '{ printf "%s ", $$0 }')
 ERTS_VSN ?= $(shell escript $(RUNTIME) get_erts_vsn)
 ERL_CALL=erl_call
 ERL=erl -boot start_clean $(ERL_COMPILE_FLAGS)
@@ -94,13 +94,6 @@ bin:
 	cp -r  $(shell escript $(RUNTIME) erl_root)/bin .
 	cp scripts/start_friendfs bin/
 	chmod +x $@/start_friendfs
-#	RootStr = re:replace(Str,"ROOTDIR=[^\\n]*","BINDIR=`pwd`/`dirname $0`\nROOTDIR=`dirname $BINDIR`",[{return,list}]),
-#    DaemonStr = re:replace(RootStr,"-daemon [^$]*","-daemon $ROOTDIR/pipes/ ",
-#			   [{return,list}]),
-#    NameStr = re:replace(DaemonStr,"\\$START_ERL_DATA",
-#			 "$START_ERL_DATA -pa $ROOTDIR/patches/ -sname "++Relname
-#			 ++" -setcookie "++Relname,
-#			 [{return,list}]),
 
 pipes log:
 	mkdir -p $@
