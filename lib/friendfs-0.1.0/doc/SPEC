@@ -204,3 +204,36 @@ write(Chunk, Data)
 
 
 
+Process chart:
+
+                                   APP
+                                   1|
+                                    |
+                                    |1    
+                             friendfs_sup - - - - - - - -
+                         1/        1\     1              \
+                        /             \                    \
+                      /                 \                    \
+                     | 1                 | 1                   | 1
+               ffs_storage_sup   ffs_filesystem_sup    ffs_mountpoint_sup
+                    1|                   1|                   1|
+                     |                    |                    |
+                     |*                   |*                   |*
+               ffs_storage_XX      ffs_filesystem        ffs_mountpoint
+                (gen_server)        (gen_server)            (fuserl)
+
+
+Sample System:
+
+ffs_storage_XX                 ffs_filesystem              ffs_mountpoint
+
+
+SSH1 - - - - - - - - - - -\                   / - - - - - - - - /home/public
+                            \               /
+                              \           /
+                                \       /
+SSH2 - - - - - - - \              \   /
+                    \ - - - - - - HOME - - - - - - - - - - - - /home/lukas
+
+
+
