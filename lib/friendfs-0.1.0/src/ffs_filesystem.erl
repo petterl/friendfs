@@ -17,8 +17,7 @@
 -export([start_link/2]).
 
 %% Storage API
--export([list/0, connect/1, disconnect/1]).
--export([read/1, write/2]).
+-export([list/1,read/3, write/3, delete/2]).
 
 
 %% gen_server callbacks
@@ -27,10 +26,10 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {storages = []}).
+-record(state, {name, storages = []}).
 
 -record(storage, {
-          url,                 % storage URL
+		  filelist = [],       % A list of files which exist in this store.
           pid,                 % Pid of storage process
           priority = 100       % Priority of storage
          }).
@@ -47,7 +46,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link(Name,Args) ->
-    gen_server:start_link({local, Name}, ?MODULE, [Args], []).
+    gen_server:start_link({local, Name}, ?MODULE, [#state{name = Name},Args], []).
 
 
 %%--------------------------------------------------------------------
@@ -58,30 +57,8 @@ start_link(Name,Args) ->
 %% list() -> [Storage]
 %% @end
 %%--------------------------------------------------------------------
-list() ->
-    gen_server:call(?SERVER, list).
-
-%%--------------------------------------------------------------------
-%% @doc
-%% Connect a new storage
-%%
-%% @spec
-%% connect(StorageUrl) -> ok | {error, Error}
-%% @end
-%%--------------------------------------------------------------------
-connect(StorageUrl) ->
-    gen_server:call(?SERVER, {connect, StorageUrl}).
-
-%%--------------------------------------------------------------------
-%% @doc
-%% List all chunks on a specificDisconnect a storage
-%%
-%% @spec
-%% disconnect(Storage) -> ok | {error, Error}
-%% @end
-%%--------------------------------------------------------------------
-disconnect(Storage) ->
-    gen_server:call(?SERVER, {disconnect, Storage}).
+list(Name) ->
+    gen_server:call(Name, list).
 
 
 %%--------------------------------------------------------------------
@@ -92,19 +69,31 @@ disconnect(Storage) ->
 %%   read(ChunkId) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-read(Cid) ->
-    gen_server:call(?SERVER, {read, Cid}).
+read(Name,Path, Offset) ->
+    gen_server:call(Name, {read, Path, Offset}).
 
 %%--------------------------------------------------------------------
 %% @doc
 %% Write a chunk to storages
 %%
 %% @spec
-%%   write(ChunkId, Data) -> ok | {error, Error}
+%%   write(Name, Path, Data) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-write(Cid, Data) ->
-    gen_server:call(?SERVER, {write, Cid, all, Data}).
+write(Name, Path, Data) ->
+    gen_server:call(Name, {write, Path, Data}).
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Delete a data path from all storages.
+%%
+%% @spec
+%%   delete(Name,Path) -> ok | {error, Error}
+%% @end
+%%--------------------------------------------------------------------
+delete(Name, Path) ->
+    gen_server:call(Name, {delete, Path}).
 
 
 %%%===================================================================
@@ -122,8 +111,8 @@ write(Cid, Data) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([Args]) ->
-    {ok, #state{}}.
+init([State,_Args]) ->
+    {ok, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -140,45 +129,39 @@ init([Args]) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call(list, _From, State) ->
-    Reply = State#state.storages,
-    {reply, Reply, State};
-handle_call({connect, StorageUrl}, _From, State) ->
-    Module = find_module(StorageUrl),
-    case gen_server:start_link(Module, StorageUrl) of
-        {ok, Pid} ->
-            Reply = ok,
-            Storage = #storage{url = StorageUrl,
-                               pid = Pid},
-            State1 = State#state{storages = [Storage | State#state.storages]};
-        Error ->
-            Reply = Error,
-            State1 = State
-    end,
-    {reply, Reply, State1};
-handle_call({disconnect, StorageUrl}, _From, State) ->
-    Storage = find_storage(StorageUrl, State#state.storages),
-    Pid = Storage#storage.pid,
-    Reply = gen_server:cast(Pid, stop),
-    {reply, Reply, State};
-handle_call({read, ChunkId}, _From, State) ->
-    Storage = choose_storage(ChunkId, State#state.storages),
-    Pid = Storage#storage.pid,
-    Res = gen_server:call(Pid, {read, ChunkId}),
-    {reply, Res, State};
-handle_call({write, Cid, _Ratio=all, Data}, _From, State) ->
-    Res = lists:map(
-	    fun(#storage{pid = Pid}) ->
-		    gen_server:call(Pid, {write, Cid, Data}) end,
-	    State#state.storages),
-    {reply, Res, State};
-handle_call({write, Cid, Ratio, Data}, _From, State) ->
-    Storages = lists:sublist(State#state.storages, Ratio),
-    Res = lists:map(
-            fun(#storage{pid = Pid}) ->
-                    gen_server:call(Pid, {write, Cid, Data}) end,
-            Storages),
-    {reply, Res, State};
+	AllFiles = lists:flatmap(fun(#storage{filelist = FileList}) ->
+								FileList
+							end,State#state.storages),
+    {reply, lists:usort(AllFiles), State};
+handle_call({read, Path, Offset}, From, State) ->
+    Storage = choose_storage(Path, State#state.storages),
+	if 
+		Storage == enoent ->
+			{reply,enoent,State};
+		true ->
+    		Pid = Storage#storage.pid,
+    		gen_server:cast(Pid, {read, From, Path, Offset}),
+    		{noreply, State}
+	end;
+handle_call({write, Path, Data}, From, State) ->
+	Storage = hd(State#state.storages),
+	Pid = Storage#storage.pid,
+	gen_server:cast(Pid,{write, From, Path, Data}),
+	NewStorage = Storage#storage{ filelist = lists:usort([Path|Storage#storage.filelist])},
+    {noreply, State#state{ storages = lists:keyreplace(Pid,#storage.pid,State#state.storages,NewStorage)}};
+handle_call({delete, Path}, From, State) ->
+	New = lists:map(fun(#storage{pid = Pid, filelist = FL} = S) ->
+				case lists:member(Path,FL) of
+					true ->
+						gen_server:call(Pid,{delete,Path}),
+						S#storage{ filelist = S#storage.filelist -- [Path]};
+					false ->
+						S
+				end
+			end,State#state.storages),
+	{reply, ok, State#state{storages = New}};
 handle_call(_Request, _From, State) ->
+	
     Reply = ok,
     {reply, Reply, State}.
 
@@ -192,8 +175,10 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast(_Msg, State) ->
-    {noreply, State}.
+handle_cast({connect, Pid, FileList}, State) ->
+	error_logger:info_report(io_lib:format("A new storage has been connected with ~p",[State#state.name])),
+	NewStore = #storage{ pid = Pid, filelist = FileList},
+    {noreply, State#state{ storages = [NewStore|State#state.storages]}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -236,23 +221,13 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%==================================================================
-find_module(Url) ->
-    {Scheme, _Rest} = friendfs_lib:urlsplit_scheme(Url),
-    find_module_by_scheme(Scheme).
 
-find_module_by_scheme(local) ->
-    ffs_storage_file;
-find_module_by_scheme(ram) ->
-    ffs_storage_mem;
-find_module_by_scheme(Type) ->
-    throw({no_storage_module_availible, Type}).
-
-find_storage(Url, []) ->
-    throw({storage_module_missing, Url});
-find_storage(Url, [Storage = #storage{url = Url} | _]) ->
-    Storage;
-find_storage(Url, [_ | R]) ->
-    find_storage(Url, R).
-
-choose_storage(_ChunkId, [Storage | _Rest]) ->
-    Storage.
+choose_storage(Path, [#storage{ filelist = FileList} = Storage| Rest]) ->
+	case lists:member(Path, FileList) of
+		true ->
+			Storage;
+		false ->
+			choose_storage(Path,Rest)
+	end;
+choose_storage(_Path, []) ->
+	enoent.

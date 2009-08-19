@@ -33,4 +33,4 @@ init(Args) ->
 	        permanent, 10000, supervisor, [ffs_mountpoint_sup]},
 
     {ok, {{one_for_one, 3, 10},
-	    [Storage,Filesystem,Mountpoint]}}.
+	    [Filesystem,Storage,Mountpoint]}}.

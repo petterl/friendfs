@@ -60,7 +60,7 @@ get_storages([],Acc) ->
 get_storages(FSName,[{"Storage",Url}|T],Acc) ->
 	Module = get_storage_mod(Url),
 	get_storages(FSName,T,[{Module, {Module,start_link,[FSName,Url]},
-        	temporary, 10000, worker, [Module]} | Acc]);
+        	permanent, 10000, worker, [Module]} | Acc]);
 get_storages(FSName,[_|T],Acc) ->
 	get_storages(FSName,T,Acc);
 get_storages(_FSName,[],Acc) ->

@@ -22,7 +22,7 @@
 	}).
 
 start_link(FSName,Url) ->
-	gen_server:start_link(?MODULE,Url,[]).
+	gen_server:start_link(?MODULE,[FSName,Url],[]).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -39,11 +39,13 @@ start_link(FSName,Url) ->
 %%                    {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init(Url) ->
+init([FSName,Url]) ->
     {_Scheme, _Host, Path, _Query, _Fragment} =
         friendfs_lib:split_url(Url),
     case file:list_dir(Path) of
-        {ok, _} -> {ok, #state{path=Path}};
+        {ok, FileList} -> 
+			gen_server:cast(FSName,{connect,self(),FileList}),
+			{ok, #state{path=Path}};
         _ -> {stop, path_missing_in_config}
     end.
 
@@ -61,12 +63,6 @@ init(Url) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({read, Cid}, _From, State) ->
-    Data = file:read_file(join(State#state.path, Cid)),
-    {reply, Data, State};
-handle_call({write, Cid, Data}, _From, State) ->
-    Res = file:write_file(join(State#state.path, Cid), Data),
-    {reply, Res, State};
 handle_call(list, _From, State) ->
     Res = file:list_dir(State#state.path),
     {reply, Res, State};
@@ -84,7 +80,13 @@ handle_call({delete, Cid}, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast(_Msg, State) ->
+handle_cast({read, From, Path, Offset}, State) ->
+	Data = file:read_file(join(State#state.path, Path)),
+	gen_server:reply(From,Data),
+    {noreply, State};
+handle_cast({write, From, Path, Data}, State) ->
+	Result = file:write_file(join(State#state.path, Path),Data),
+	gen_server:reply(From,Result),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
