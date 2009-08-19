@@ -26,7 +26,7 @@ start(_Type, _Args) ->
 %    { ok, MountPoint } = application:get_env(friendfs, mount_point),
 %   { ok, MountOpts } = application:get_env (friendfs, mount_opts),
 
-    friendfs_sup:start_link(),
+    friendfs_sup:start_link([]),
     {ok,self()}.
 
 %% @hidden

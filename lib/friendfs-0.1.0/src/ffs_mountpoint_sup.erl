@@ -1,18 +1,18 @@
 %%%-------------------------------------------------------------------
-%%% @author Petter Sandholdt <petterl@lysator.liu.se>
+%%% @author Lukas Larsson <garazdawi@gmail.com>
 %%% @doc
-%%%   Storage Supervisor
+%%%   Filesystem Supervisor
 %%%
-%%% Managaes supervision of storages and restarts dead storages when needed.
+%%% Managaes supervision of filesystems.
 %%%
 %%% @end
-%%% Created : 10 Aug 2009 by Petter Sandholdt <petterl@lysator.liu.se>
+%%% Created : 19 Aug 2009 by Lukas Larsson <garazdawi@gmail.com>
 %%%-------------------------------------------------------------------
--module(ffs_storage_sup).
+-module(ffs_mountpoint_sup).
 -behaviour(supervisor).
 
 %% API
--export([start_link/1, connect_storage/2]).
+-export([start_link/0, mount/2]).
 -export([init/1]).
 
 -define(SERVER, ?MODULE).
@@ -28,11 +28,13 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Args) ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, [Args]).
+start_link() ->
+    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
-connect_storage(Mod, Args) ->
-    supervisor:start_child({local, ?SERVER}, [Mod, Args]).
+mount(Path,Opts) ->
+	Spec = {ffs_mountpoint, {ffs_mountpoint, start_link, [Path,Opts]},
+        	temporary, infinity, worker, [ffs_mountpoint]},
+    supervisor:start_child({local, ?SERVER}, Spec).
 
 %%%===================================================================
 %%% supervisor callbacks
@@ -44,8 +46,7 @@ connect_storage(Mod, Args) ->
 %% Initiates the supervisor
 %%
 %%--------------------------------------------------------------------
-init([Args]) ->
-    {ok, {{simple_one_for_one, 10, 10},
-          [{ffs_storage, {ffs_storage_mgr, start_link, [Args]},
-            temporary, brutal_kill, worker, [ffs_storage_mgr]}]}}.
+init([]) ->
+    {ok, {{one_for_one, 10, 10},
+          []}}.
 

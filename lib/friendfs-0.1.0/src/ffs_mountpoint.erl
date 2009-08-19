@@ -9,7 +9,7 @@
 %%% @end
 %%% Created : 10 Aug 2009 by Petter Larsson <petterl@lysator.liu.se>
 %%%-------------------------------------------------------------------
--module(ffs_filesystem).
+-module(ffs_mountpoint).
 
 -behaviour(gen_server).
 

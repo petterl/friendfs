@@ -12,7 +12,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, start_filesystem/2]).
+-export([start_link/1, start_filesystem/1]).
 -export([init/1]).
 
 -define(SERVER, ?MODULE).
@@ -28,8 +28,8 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+start_link(Args) ->
+    supervisor:start_link({local, ?SERVER}, ?MODULE, [Args]).
 
 start_filesystem(Args) ->
 	Spec = {ffs_filesystem, {ffs_filesysten, start_link, [Args]},
@@ -46,7 +46,7 @@ start_filesystem(Args) ->
 %% Initiates the supervisor
 %%
 %%--------------------------------------------------------------------
-init([]) ->
+init([Args]) ->
     {ok, {{one_for_one, 10, 10},
           []}}.
 

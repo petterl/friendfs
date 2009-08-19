@@ -1,14 +1,14 @@
 -module(friendfs_sup).
 -behaviour(supervisor).
 
--export([ start_link/0, init/1 , mount/3 ]).
+-export([ start_link/1, init/1]).
 
 %-=====================================================================-
 %-                                Public                               -
 %-=====================================================================-
 
-start_link () ->
-  supervisor:start_link({local,?MODULE},?MODULE, [  ]).
+start_link (Args) ->
+  supervisor:start_link({local,?MODULE},?MODULE, Args).
 
 
 %-=====================================================================-
@@ -16,20 +16,21 @@ start_link () ->
 %-=====================================================================-
 %% @hidden
 
-init([ ]) ->
+init(Args) ->
     Storage = 
         {ffs_storage_sup,
-	        {ffs_storage_sup, start_link, []},
+	        {ffs_storage_sup, start_link, [Args]},
 	        permanent, 10000, worker, [ffs_storage_sup]},
+	
+	Filesystem = 
+		{ffs_filestore_sup,
+	        {ffs_filesystem_sup, start_link, [Args]},
+	        permanent, 10000, worker, [ffs_filestore_sup]},
+	
+	Mountpoint =
+	    {ffs_mountpoint_sup,
+	        {ffs_mountpoint_sup, start_link, []},
+	        permanent, 10000, worker, [ffs_mountpoint_sup]},
 
     {ok, {{one_for_one, 3, 10},
-	    [Storage]}}.
-
-
-mount(LinkedIn,MountPoint,MountOpts) ->
-    FileSystem =
-        {filesystem,
-	 {filesystem, start_link, [LinkedIn,MountPoint,MountOpts]},
-	 transient, 10000, worker, [filesystem]},
-
-    supervisor:start_child(?MODULE,FileSystem).
+	    [Storage,Filesystem,Mountpoint]}}.
