@@ -1,7 +1,7 @@
 Nonterminals body config.
 Terminals '<' '>' '</' key value comment.
 Rootsymbol config.
-config -> key value: {value_of('$1'),value_of('$2')}.
+config -> key value: [{value_of('$1'),value_of('$2')}].
 config -> key value config:[{value_of('$1'),value_of('$2')}|'$3'].
 config -> comment.
 config -> comment config:'$2'.

@@ -14,7 +14,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0]).
+-export([start_link/2]).
 
 %% Storage API
 -export([list/0, connect/1, disconnect/1]).
@@ -46,8 +46,8 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+start_link(Name,Args) ->
+    gen_server:start_link({local, Name}, ?MODULE, [Args], []).
 
 
 %%--------------------------------------------------------------------
@@ -122,7 +122,7 @@ write(Cid, Data) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([]) ->
+init([Args]) ->
     {ok, #state{}}.
 
 %%--------------------------------------------------------------------

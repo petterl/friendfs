@@ -22,12 +22,17 @@ start(Type) ->
 %% @hidden
 
 start(_Type, _Args) ->
-%    { ok, LinkedIn } = application:get_env(friendfs, linked_in),
-%    { ok, MountPoint } = application:get_env(friendfs, mount_point),
-%   { ok, MountOpts } = application:get_env (friendfs, mount_opts),
+	{ok,ConfigPath} = application:get_env(friendfs,config_path),
 
-    friendfs_sup:start_link([]),
-    {ok,self()}.
+	Config = case friendfs_lib:parse_config(ConfigPath) of
+				{ok,Config0} ->
+					Config0;
+				_Else ->
+					io:format("Could not read config file!"),
+					exit(1)
+				end,
+
+    friendfs_sup:start_link(Config).
 
 %% @hidden
 

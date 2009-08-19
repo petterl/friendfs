@@ -7,7 +7,7 @@
 -module(friendfs_lib).
 
 
--export([split_url/1,parse_config/2,parse_config/1,scan_config_str/2]).
+-export([split_url/1,urlsplit_scheme/1,parse_config/2,parse_config/1,scan_config_str/2]).
 -define(DELIMS,[$ ,$\n,$#,$>,$<,$\t]).
 
 split_url(Url) ->

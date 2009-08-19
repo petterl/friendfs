@@ -45,7 +45,27 @@ connect_storage(Mod, Args) ->
 %%
 %%--------------------------------------------------------------------
 init([Args]) ->
-    {ok, {{simple_one_for_one, 10, 10},
-          [{ffs_storage, {ffs_storage_mgr, start_link, [Args]},
-            temporary, brutal_kill, worker, [ffs_storage_mgr]}]}}.
+	Specs = get_storages(Args,[]),
+    {ok, {{one_for_one, 10, 10},Specs}}.
 
+
+get_storages([{"Filesystem",Name,Args}|T],Acc) ->
+	io:format("Args: ~p\n",[Args]),
+	NewAcc = get_storages(list_to_atom(Name),Args,Acc),
+	get_storages(T,NewAcc);
+get_storages([_|T],Acc) ->
+	get_storages(T,Acc);
+get_storages([],Acc) ->
+	Acc.
+get_storages(FSName,[{"Storage",Url}|T],Acc) ->
+	Module = get_storage_mod(Url),
+	get_storages(FSName,T,[{Module, {Module,start_link,[FSName,Url]},
+        	temporary, 10000, worker, [Module]} | Acc]);
+get_storages(FSName,[_|T],Acc) ->
+	get_storages(FSName,T,Acc);
+get_storages(_FSName,[],Acc) ->
+	Acc.
+
+get_storage_mod(Url) ->
+	{Scheme, _Rest} = friendfs_lib:urlsplit_scheme(Url),
+	list_to_atom(lists:concat(["ffs_storage_",Scheme])).

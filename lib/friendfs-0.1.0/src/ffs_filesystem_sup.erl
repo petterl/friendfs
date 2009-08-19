@@ -47,6 +47,14 @@ start_filesystem(Args) ->
 %%
 %%--------------------------------------------------------------------
 init([Args]) ->
+	Specs = get_filesystems(Args,[]),
     {ok, {{one_for_one, 10, 10},
-          []}}.
+          Specs}}.
 
+get_filesystems([{"Filesystem",Name,Args}|T],Acc) ->
+	get_filesystems(T,[{ffs_filesystem, {ffs_filesystem, start_link, [list_to_atom(Name),Args]},
+        	temporary, 10000, worker, [ffs_filesystem]}|Acc]);
+get_filesystems([_|T],Acc) ->
+	get_filesystems(T,Acc);
+get_filesystems([],Acc) ->
+	Acc.
