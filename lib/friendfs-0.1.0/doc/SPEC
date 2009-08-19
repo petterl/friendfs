@@ -134,7 +134,23 @@ Mountpoint ffs_mountpoint
 The FUSE interaction module, handles connection beween FUSE and the 
 filesystem.
 
-One process per mountpoint connected to a specific filesystem.
+One process per mountpoint connected to a specific filesystem. All are
+supervised by the ffs_mountpoint_sup supervisor using a one_for_one
+strategy.
+
+These processes are named processes which have the name of
+list_to_atom(MountPoint).
+
+The options which can be specified are:
+    fs - the filesystem to be mounted
+
+mount(MountPoint::string(),Opts::string()) -> {ok,atom()} | {error,Reason}
+umount(MountPoint::string()) -> ok | {error,Reason}
+
+Examples:
+
+mount("/home/lukas/","fs=home").
+umount("/home/lukas/").
 
 Filesystem ffs_filesystem
 ==========
@@ -144,22 +160,29 @@ Contains information about the file allocation table and file -> chunk relation
 Connects all needed Storages from config file for filesystem and
 verify the filesystem before making it accessible.
 
-One process per filesystem defined in config file.
+One process per filesystem defined in config file. All are
+supervised by the ffs_filesystem_sup supervisor using a one_for_one
+strategy.
 
+These processes are named processes which have the name of list_to_atom(Name).
+
+start_link(Name::string(),Storages::list()) -> {ok,atom()} | {error,Reason}
+stop(Name::string()) -> ok | {error,Reason}
+add_storage(Storage) -> ok | {error,Reason}
+remove_storage(Storage) -> ok | {error,Reason}
+
+
+and lost of file access functions like:
 chunk_ratio(Chunk) -> int()
 
-Storage Manager ffs_storage_mgr
-===============
-Handles all storages and prioritise between storages at read and write.
-Encrypt and decrypts all data.
-Schedule storage list checks with an interval, if a chunk is removed,
-verify chunk, which will store it to new storages if needed.
-If a storage is disconnected verify all chunks that was on that storage.
 
-list() -> [Storage]
+Friendfs Manager friendfs_mgr
+===============
+
+
+
 connect(Storage)
 disconnect(Storage)
-list_chunks(Storage) -> [Chunk]
 read(Chunk) -> Data
 write(Chunk, Ratio, Data)  
 verify_chunk(Chunk, Ratio) -> {ok, Ratio} | {error, chunk_not_accessible}
@@ -178,5 +201,6 @@ disconnect(Storage)
 list() -> [Shunks]
 read(Chunk) -> Data
 write(Chunk, Data)
+
 
 
