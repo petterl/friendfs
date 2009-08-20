@@ -119,4 +119,4 @@ export PATH
 
 echo "Sending config!"
 ERL_CALL_ARGS="\"$mount_point\",\"$mount_opts\""
-erl_call -c friendfs -sname friendfs -a "friendfs add_config [$ERL_CALL_ARGS]"
+erl_call -c friendfs -sname friendfs -a "ffs_mountpoint_sup mount [$ERL_CALL_ARGS]"

@@ -12,7 +12,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, mount/2]).
+-export([start_link/0, mount/2,umount/1]).
 -export([init/1]).
 
 -define(SERVER, ?MODULE).
@@ -31,10 +31,23 @@
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
-mount(Path,Opts) ->
-	Spec = {ffs_mountpoint, {ffs_mountpoint, start_link, [Path,Opts]},
-        	temporary, infinity, worker, [ffs_mountpoint]},
-    supervisor:start_child({local, ?SERVER}, Spec).
+mount(MountPoint,Options) ->
+    Spec = {MountPoint, {ffs_mountpoint, start_link, [MountPoint,Options]},
+	    permanent, 10000, worker, [ffs_mountpoint]},
+    supervisor:start_child(?SERVER, Spec).
+
+umount(MountPoint) ->
+    Res = (supervisor:terminate_child(?SERVER,MountPoint) == ok)
+	andalso (supervisor:delete_child(?SERVER,MountPoint) == ok),
+
+    if
+	Res ->
+	    ok;
+	true ->
+	    {error,umount_failed}
+    end.
+    
+    
 
 %%%===================================================================
 %%% supervisor callbacks
@@ -49,4 +62,5 @@ mount(Path,Opts) ->
 init([]) ->
     {ok, {{one_for_one, 10, 10},
           []}}.
+
 

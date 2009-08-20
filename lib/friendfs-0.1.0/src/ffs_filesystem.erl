@@ -1,10 +1,10 @@
 %%%-------------------------------------------------------------------
-%%% @author Petter Larsson <petterl@lysator.liu.se>
+%%% @author Lukas Larsson <garazdawi@gmail.com>
 %%% @doc
-%%%   Storage Manager
+%%%   Filesystem
 %%%
-%%% Manages all storages and prioritize storages at read and write
-%%% Verify atorage before making it availible
+%%% The brains of friendsfs. It manages all the different stores and
+%%% manages a FAT table of the filesystem. 
 %%%
 %%% @end
 %%% Created : 10 Aug 2009 by Petter Larsson <petterl@lysator.liu.se>
@@ -13,11 +13,13 @@
 
 -behaviour(gen_server).
 
+-include_lib("friendfs/include/friendfs.hrl").
+
 %% API
 -export([start_link/2]).
 
 %% Storage API
--export([list/1,read/3, write/3, delete/2]).
+-export([list/1,read/3, write/3, delete/2, make_dir/2, read_node_info/2]).
 
 
 %% gen_server callbacks
@@ -26,10 +28,11 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {name, storages = []}).
+-record(state, {name, table, storages = []}).
 
 -record(storage, {
-		  filelist = [],       % A list of files which exist in this store.
+	  filelist = [],       % A list of files which exist in this store.
+	  storeinfo,
           pid,                 % Pid of storage process
           priority = 100       % Priority of storage
          }).
@@ -96,6 +99,28 @@ delete(Name, Path) ->
     gen_server:call(Name, {delete, Path}).
 
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Create a new directory at the given path
+%%
+%% @spec
+%%   delete(Name,Path) -> ok | {error, Error}
+%% @end
+%%--------------------------------------------------------------------
+make_dir(Name, Path) ->
+    gen_server:call(Name, {make_dir, Path}).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Get information about the node in the given path.
+%%
+%% @spec
+%%   read_node_info(Name,Path) -> #ffs_node{} | {error, Error}
+%% @end
+%%--------------------------------------------------------------------
+read_node_info(Name,Path) ->
+    gen_server:call(Name, {read_node_info, Path}).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -112,7 +137,11 @@ delete(Name, Path) ->
 %% @end
 %%--------------------------------------------------------------------
 init([State,_Args]) ->
-    {ok, State}.
+    process_flag(trap_exit,true),
+    Tid = ets:new(State#state.name,[{keypos,#ffs_node.inode},ordered_set]),
+    NewState = State#state{ table = Tid },
+    insert_dir(NewState#state.table,root,"/","",[]),
+    {ok, NewState}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -129,10 +158,14 @@ init([State,_Args]) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call(list, _From, State) ->
-	AllFiles = lists:flatmap(fun(#storage{filelist = FileList}) ->
-								FileList
-							end,State#state.storages),
-    {reply, lists:usort(AllFiles), State};
+    {reply, ets:tab2list(State#state.table), State};
+handle_call({read_node_info,Path}, _From, #state{ table = TabName} = State) ->
+    case read_node_info_ets(TabName,Path) of
+	enoent ->
+	    {reply,{error,enoent},State};
+	Inode ->
+	    {reply,hd(ets:lookup(TabName,Inode)),State}
+    end;
 handle_call({read, Path, Offset}, From, State) ->
     Storage = choose_storage(Path, State#state.storages),
 	if 
@@ -140,26 +173,42 @@ handle_call({read, Path, Offset}, From, State) ->
 			{reply,enoent,State};
 		true ->
     		Pid = Storage#storage.pid,
-    		gen_server:cast(Pid, {read, From, Path, Offset}),
+		EncPath = encrypt_path(Path,file),
+    		gen_server:cast(Pid, {read, From, EncPath, Offset}),
     		{noreply, State}
 	end;
 handle_call({write, Path, Data}, From, State) ->
-	Storage = hd(State#state.storages),
-	Pid = Storage#storage.pid,
-	gen_server:cast(Pid,{write, From, Path, Data}),
-	NewStorage = Storage#storage{ filelist = lists:usort([Path|Storage#storage.filelist])},
+    Storage = hd(State#state.storages),
+    Pid = Storage#storage.pid,
+    EncPath = encrypt_path(Path,file),
+    gen_server:cast(Pid,{write, From, EncPath, Data}),
+    NewStorage = Storage#storage{
+		   filelist = lists:usort([Path|Storage#storage.filelist])},
     {noreply, State#state{ storages = lists:keyreplace(Pid,#storage.pid,State#state.storages,NewStorage)}};
-handle_call({delete, Path}, From, State) ->
-	New = lists:map(fun(#storage{pid = Pid, filelist = FL} = S) ->
-				case lists:member(Path,FL) of
-					true ->
-						gen_server:call(Pid,{delete,Path}),
-						S#storage{ filelist = S#storage.filelist -- [Path]};
-					false ->
-						S
-				end
-			end,State#state.storages),
-	{reply, ok, State#state{storages = New}};
+handle_call({make_dir, Path}, _From, State) ->
+    Storage = hd(State#state.storages),
+    Pid = Storage#storage.pid,
+    EncPath = encrypt_path(Path,dir),
+    case gen_server:call(Pid,{write, EncPath, <<"">>}) of
+	ok ->
+	    make_dir_ets(State#state.table,Path,Storage),
+	    {reply,ok,State};
+	{error,Reason} ->
+	    {reply,{error,Reason},State}
+    end;
+handle_call({delete, Path}, _From, State) ->
+    New = lists:map(
+	    fun(#storage{pid = Pid, filelist = FL} = S) ->
+		    case lists:member(Path,FL) of
+			true ->
+			    EncPath = encrypt_path(Path,file),
+			    gen_server:call(Pid,{delete,EncPath}),
+			    S#storage{ filelist = S#storage.filelist -- [Path]};
+			false ->
+			    S
+		    end
+	    end,State#state.storages),
+    {reply, ok, State#state{storages = New}};
 handle_call(_Request, _From, State) ->
 	
     Reply = ok,
@@ -175,9 +224,13 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({connect, Pid, FileList}, State) ->
-	error_logger:info_report(io_lib:format("A new storage has been connected with ~p",[State#state.name])),
-	NewStore = #storage{ pid = Pid, filelist = FileList},
+handle_cast({connect, Pid, Storeinfo, FileList}, State) ->
+    error_logger:info_report(
+      io_lib:format("A new storage has been connected with ~p",[State#state.name])),
+    DecrFileList = [decrypt_path(S) || S <- FileList],
+    update_ets(DecrFileList,Storeinfo, State#state.table),
+    NewStore = #storage{ pid = Pid , storeinfo = Storeinfo },
+    link(Pid),
     {noreply, State#state{ storages = [NewStore|State#state.storages]}}.
 
 %%--------------------------------------------------------------------
@@ -191,6 +244,7 @@ handle_cast({connect, Pid, FileList}, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info(_Info, State) ->
+    io:format("~p: Unknown handle_info(~p,~p) call\n",[?MODULE,_Info,State]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -231,3 +285,130 @@ choose_storage(Path, [#storage{ filelist = FileList} = Storage| Rest]) ->
 	end;
 choose_storage(_Path, []) ->
 	enoent.
+
+
+read_node_info_ets(TabName,Path) ->
+    Dir = filename:dirname(Path),
+    Name = filename:basename(Path),
+    find_inode(TabName,Dir,Name).
+
+make_dir_ets(TabName,NewDirPath,Storage) ->
+    NewName = filename:basename(NewDirPath),
+    ParentPath = filename:dirname(NewDirPath),
+    ParentName = filename:basename(ParentPath),
+    Path = filename:dirname(ParentPath),
+    case find_inode(TabName,Path,ParentName) of
+	enoent ->
+	    enoent;
+	ParentInode ->
+	    insert_dir(TabName,ParentInode,Path++ParentName,NewName,Storage)
+    end.
+
+create_file_ets(TabName,NewFilePath,Hash,Storage) ->
+    ok.
+	
+find_inode(TabName,Path,Name) ->
+  case ets:match(TabName,#ffs_node{ path = Path,
+				    name = Name,
+				    inode = '$1',
+				    _ = '_'}) of
+      [[Inode]] ->
+	  Inode;
+      _Else ->
+	  enoent
+  end.
+
+
+encrypt_path(String,file) ->
+    re:replace(String,"/","-",[global,{return,list}])++"?file.ffs";
+encrypt_path(String,dir) ->
+    re:replace(String,"/","-",[global,{return,list}])++"?dir.ffs".
+
+decrypt_path(String) ->
+    Stripped = lists:reverse(filename:rootname(String)),
+    case re:split(Stripped,"[?]",[{return,list}]) of
+	["rid",Path] ->
+	    {dir,re:replace(lists:reverse(Path),"-","/",[global,{return,list}])};
+	["elif",Path] ->
+	    {file,re:replace(lists:reverse(Path),"-","/",[global,{return,list}])}
+    end.
+
+
+insert_dir(TabName,root,Path,Name,Store) ->
+    insert_dir(TabName,1,none,Path,Name,[],Store),
+    1;
+insert_dir(TabName,Parent,Path,Name,Store) ->
+    Inode = ets:last(TabName)+1,
+    [Node] = ets:lookup(TabName,Parent),
+
+    Data = Node#ffs_node.data,
+    NewChildren = [Inode|Data#ffs_dir.children],
+    
+    NewNode = Node#ffs_node{ data = Data#ffs_dir{ children = NewChildren }},
+    
+    insert_dir(TabName,Inode,Parent,Path,Name,[],Store),
+    update_node(TabName,NewNode),
+    Inode.
+
+    
+insert_dir(TabName,Inode,Parent,Path,Name,Children,Store) ->
+    ets:insert(TabName,#ffs_node{ inode = Inode,
+				  path = Path,
+				  parent = Parent,
+				  name = Name,
+				  data = #ffs_dir{ children = Children },
+				  stores = [Store]}).
+
+update_node(TabName,Node) ->
+    ets:insert(TabName,Node).
+    
+
+update_ets(Data,Store,TabName) ->
+    insert_dirs(Data,Store,TabName),
+    insert_files(Data,Store,TabName).
+
+insert_dirs([H|T],Parent,Path,#ffs_dir{ children = Children },Store,TabName) ->
+    case find_node(TabName,H,Children) of
+	node_not_found ->
+	    NextParent = insert_dir(TabName,Parent,Path,H,Store),
+	    insert_dirs(T,NextParent,Path++H,
+		       ets:lookup_element(TabName,NextParent,#ffs_node.data),Store,TabName);
+	#ffs_node{ inode = NextParent } = Node ->
+	    add_store(TabName,Node,Store),
+	    insert_dirs(T,NextParent,Path++H,Node#ffs_node.data,Store,TabName)
+    end;
+insert_dirs(Post,_Parent,Path,#ffs_file{},_Store,TabName) ->
+    error_handler:info_report(
+      io_lib:format("Trying to create ~p where a file exists.",[Path++Post]));
+insert_dirs([],_Parent,_Path,_dir,_Store,_TabName) ->
+    ok.
+
+add_store(TabName,Node,Store) ->
+    update_node(TabName,Node#ffs_node{
+			  stores = lists:usort([Store|Node#ffs_node.stores])}).
+
+find_node(TabName,Name,[H|T]) ->
+    case ets:lookup(TabName,H) of
+	[#ffs_node{ name = Name }  = Node] ->
+	    Node;
+	_ ->
+	    find_node(TabName,Name,T)
+    end;
+find_node(_TabName,_Name,[]) ->
+    node_not_found.
+	    
+
+
+insert_dirs([{dir,Path}|T],Store,TabName) ->
+    insert_dirs(string:tokens(Path,"/"),1,"/",
+		ets:lookup_element(TabName,1,#ffs_node.data),Store,TabName),
+    insert_dirs(T,Store,TabName);
+insert_dirs([_|T],Store,TabName) ->
+    insert_dirs(T,Store,TabName);
+insert_dirs([],_Store,_TabName) ->
+    ok.
+
+insert_files(_,_Store,_TabName) ->
+    ok.
+    
+    

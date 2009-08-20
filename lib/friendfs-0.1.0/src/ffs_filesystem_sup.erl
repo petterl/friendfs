@@ -52,7 +52,7 @@ init([Args]) ->
           Specs}}.
 
 get_filesystems([{"Filesystem",Name,Args}|T],Acc) ->
-	get_filesystems(T,[{ffs_filesystem, {ffs_filesystem, start_link, [list_to_atom(Name),Args]},
+	get_filesystems(T,[{Name, {ffs_filesystem, start_link, [list_to_atom(Name),Args]},
         	permanent, 10000, worker, [ffs_filesystem]}|Acc]);
 get_filesystems([_|T],Acc) ->
 	get_filesystems(T,Acc);

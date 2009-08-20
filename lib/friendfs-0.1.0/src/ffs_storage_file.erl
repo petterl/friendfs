@@ -9,6 +9,8 @@
 
 -behaviour(gen_server).
 
+-include_lib("kernel/include/file.hrl").
+
 -export([start_link/2]).
 
 %% gen_server callbacks
@@ -43,10 +45,11 @@ init([FSName,Url]) ->
     {_Scheme, _Host, Path, _Query, _Fragment} =
         friendfs_lib:split_url(Url),
     case file:list_dir(Path) of
-        {ok, FileList} -> 
-			gen_server:cast(FSName,{connect,self(),FileList}),
-			{ok, #state{path=Path}};
-        _ -> {stop, path_missing_in_config}
+        {ok, List} ->
+	    gen_server:cast(FSName,{connect,self(),Url,List}),
+	    {ok, #state{path=Path}};
+        _ ->
+	    {stop, path_missing_in_config}
     end.
 
 %%--------------------------------------------------------------------
@@ -68,7 +71,11 @@ handle_call(list, _From, State) ->
     {reply, Res, State};
 handle_call({delete, Cid}, _From, State) ->
     Res = file:delete(join(State#state.path, Cid)),
-    {reply, Res, State}.
+    {reply, Res, State};
+handle_call({write, Path, Data}, _From, State) ->
+    Result = file:write_file(join(State#state.path, Path),Data),
+    {reply, Result, State}.
+
 
 %%--------------------------------------------------------------------
 %% @private
@@ -81,12 +88,8 @@ handle_call({delete, Cid}, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast({read, From, Path, Offset}, State) ->
-	Data = file:read_file(join(State#state.path, Path)),
-	gen_server:reply(From,Data),
-    {noreply, State};
-handle_cast({write, From, Path, Data}, State) ->
-	Result = file:write_file(join(State#state.path, Path),Data),
-	gen_server:reply(From,Result),
+    Data = file:read_file(join(State#state.path, Path)),
+    gen_server:reply(From,Data),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -133,3 +136,17 @@ code_change(_OldVsn, State, _Extra) ->
 
 join(Path, Filename) ->
     filename:join(Path, Filename).
+
+
+get_files_n_dirs(Path,[H|T],Acc) ->
+    NewPath = join(Path,H),
+    case file:read_file_info(NewPath) of
+	{ok,#file_info{ type = directory }} ->
+	    {ok,List} = file:list_dir(NewPath),
+	    RecAcc = get_files_n_dirs(NewPath,List,Acc),
+	    get_files_n_dirs(Path,T,[{dir,NewPath}]);
+	{ok,#file_info{ type = regular }} ->
+	    get_files_n_dirs(Path,T,[{file,NewPath}])
+    end;
+get_files_n_dirs(_Path,[],Acc) ->
+    Acc.

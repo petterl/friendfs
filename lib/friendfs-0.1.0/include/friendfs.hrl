@@ -1,0 +1,3 @@
+-record(ffs_node, {inode, parent, path, name, xattr = [], data, stores}).
+-record(ffs_file, { hash }).
+-record(ffs_dir, { children = [] }).
