@@ -28,7 +28,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {name, table, storages = []}).
+-record(state, {name, fat, storages = []}).
 
 -record(storage, {
 	  filelist = [],       % A list of files which exist in this store.
@@ -45,7 +45,7 @@
 %% @doc
 %% Starts the server
 %%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
+%% @spec start_link(Name,Args) -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
 start_link(Name,Args) ->
@@ -57,7 +57,7 @@ start_link(Name,Args) ->
 %% List all configured Storages
 %%
 %% @spec
-%% list() -> [Storage]
+%% list(Name) -> [Storage]
 %% @end
 %%--------------------------------------------------------------------
 list(Name) ->
@@ -69,7 +69,7 @@ list(Name) ->
 %% Read a chunk from a storage
 %%
 %% @spec
-%%   read(ChunkId) -> ok | {error, Error}
+%%   read(Name,Path,Offset) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
 read(Name,Path, Offset) ->
@@ -104,7 +104,7 @@ delete(Name, Path) ->
 %% Create a new directory at the given path
 %%
 %% @spec
-%%   delete(Name,Path) -> ok | {error, Error}
+%%   make_dir(Name,Path) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
 make_dir(Name, Path) ->
@@ -138,9 +138,8 @@ read_node_info(Name,Path) ->
 %%--------------------------------------------------------------------
 init([State,_Args]) ->
     process_flag(trap_exit,true),
-    Tid = ets:new(State#state.name,[{keypos,#ffs_node.inode},ordered_set]),
-    NewState = State#state{ table = Tid },
-    insert_dir(NewState#state.table,root,"/","",[]),
+    Tid = ffs_fat:init(State#state.name,{?MODULE,path_encoding,[]}),
+    NewState = State#state{ fat = Tid },
     {ok, NewState}.
 
 %%--------------------------------------------------------------------
@@ -158,8 +157,8 @@ init([State,_Args]) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call(list, _From, State) ->
-    {reply, ets:tab2list(State#state.table), State};
-handle_call({read_node_info,Path}, _From, #state{ table = TabName} = State) ->
+    {reply, ets:tab2list(State#state.fat), State};
+handle_call({read_node_info,Path}, _From, #state{ fat = TabName} = State) ->
     case read_node_info_ets(TabName,Path) of
 	enoent ->
 	    {reply,{error,enoent},State};
@@ -191,7 +190,7 @@ handle_call({make_dir, Path}, _From, State) ->
     EncPath = encrypt_path(Path,dir),
     case gen_server:call(Pid,{write, EncPath, <<"">>}) of
 	ok ->
-	    make_dir_ets(State#state.table,Path,Storage),
+	    make_dir_ets(State#state.fat,Path,Storage),
 	    {reply,ok,State};
 	{error,Reason} ->
 	    {reply,{error,Reason},State}
@@ -228,7 +227,7 @@ handle_cast({connect, Pid, Storeinfo, FileList}, State) ->
     error_logger:info_report(
       io_lib:format("A new storage has been connected with ~p",[State#state.name])),
     DecrFileList = [decrypt_path(S) || S <- FileList],
-    update_ets(DecrFileList,Storeinfo, State#state.table),
+%    update_ets(DecrFileList,Storeinfo, State#state.table),
     NewStore = #storage{ pid = Pid , storeinfo = Storeinfo },
     link(Pid),
     {noreply, State#state{ storages = [NewStore|State#state.storages]}}.
@@ -301,22 +300,14 @@ make_dir_ets(TabName,NewDirPath,Storage) ->
 	enoent ->
 	    enoent;
 	ParentInode ->
-	    insert_dir(TabName,ParentInode,Path++ParentName,NewName,Storage)
+	    ffs_fat:make_dir(TabName,ParentInode,NewName,default,default,default)
     end.
 
 create_file_ets(TabName,NewFilePath,Hash,Storage) ->
     ok.
 	
 find_inode(TabName,Path,Name) ->
-  case ets:match(TabName,#ffs_node{ path = Path,
-				    name = Name,
-				    inode = '$1',
-				    _ = '_'}) of
-      [[Inode]] ->
-	  Inode;
-      _Else ->
-	  enoent
-  end.
+  ffs_fat:find(TabName,Path).
 
 
 encrypt_path(String,file) ->
@@ -334,81 +325,81 @@ decrypt_path(String) ->
     end.
 
 
-insert_dir(TabName,root,Path,Name,Store) ->
-    insert_dir(TabName,1,none,Path,Name,[],Store),
-    1;
-insert_dir(TabName,Parent,Path,Name,Store) ->
-    Inode = ets:last(TabName)+1,
-    [Node] = ets:lookup(TabName,Parent),
+%% insert_dir(TabName,root,Path,Name,Store) ->
+%%     insert_dir(TabName,1,none,Path,Name,[],Store),
+%%     1;
+%% insert_dir(TabName,Parent,Path,Name,Store) ->
+%%     Inode = ets:last(TabName)+1,
+%%     [Node] = ets:lookup(TabName,Parent),
 
-    Data = Node#ffs_node.data,
-    NewChildren = [Inode|Data#ffs_dir.children],
+%%     Data = Node#ffs_node.data,
+%%     NewChildren = [Inode|Data#ffs_dir.children],
     
-    NewNode = Node#ffs_node{ data = Data#ffs_dir{ children = NewChildren }},
+%%     NewNode = Node#ffs_node{ data = Data#ffs_dir{ children = NewChildren }},
     
-    insert_dir(TabName,Inode,Parent,Path,Name,[],Store),
-    update_node(TabName,NewNode),
-    Inode.
+%%     insert_dir(TabName,Inode,Parent,Path,Name,[],Store),
+%%     update_node(TabName,NewNode),
+%%     Inode.
 
     
-insert_dir(TabName,Inode,Parent,Path,Name,Children,Store) ->
-    ets:insert(TabName,#ffs_node{ inode = Inode,
-				  path = Path,
-				  parent = Parent,
-				  name = Name,
-				  data = #ffs_dir{ children = Children },
-				  stores = [Store]}).
+%% insert_dir(TabName,Inode,Parent,Path,Name,Children,Store) ->
+%%     ets:insert(TabName,#ffs_node{ inode = Inode,
+%% 				  path = Path,
+%% 				  parent = Parent,
+%% 				  name = Name,
+%% 				  data = #ffs_dir{ children = Children },
+%% 				  stores = [Store]}).
 
-update_node(TabName,Node) ->
-    ets:insert(TabName,Node).
+%% update_node(TabName,Node) ->
+%%     ets:insert(TabName,Node).
     
 
-update_ets(Data,Store,TabName) ->
-    insert_dirs(Data,Store,TabName),
-    insert_files(Data,Store,TabName).
+%% update_ets(Data,Store,TabName) ->
+%%     insert_dirs(Data,Store,TabName),
+%%     insert_files(Data,Store,TabName).
 
-insert_dirs([H|T],Parent,Path,#ffs_dir{ children = Children },Store,TabName) ->
-    case find_node(TabName,H,Children) of
-	node_not_found ->
-	    NextParent = insert_dir(TabName,Parent,Path,H,Store),
-	    insert_dirs(T,NextParent,Path++H,
-		       ets:lookup_element(TabName,NextParent,#ffs_node.data),Store,TabName);
-	#ffs_node{ inode = NextParent } = Node ->
-	    add_store(TabName,Node,Store),
-	    insert_dirs(T,NextParent,Path++H,Node#ffs_node.data,Store,TabName)
-    end;
-insert_dirs(Post,_Parent,Path,#ffs_file{},_Store,TabName) ->
-    error_handler:info_report(
-      io_lib:format("Trying to create ~p where a file exists.",[Path++Post]));
-insert_dirs([],_Parent,_Path,_dir,_Store,_TabName) ->
-    ok.
+%% insert_dirs([H|T],Parent,Path,#ffs_dir{ children = Children },Store,TabName) ->
+%%     case find_node(TabName,H,Children) of
+%% 	node_not_found ->
+%% 	    NextParent = insert_dir(TabName,Parent,Path,H,Store),
+%% 	    insert_dirs(T,NextParent,Path++H,
+%% 		       ets:lookup_element(TabName,NextParent,#ffs_node.data),Store,TabName);
+%% 	#ffs_node{ inode = NextParent } = Node ->
+%% 	    add_store(TabName,Node,Store),
+%% 	    insert_dirs(T,NextParent,Path++H,Node#ffs_node.data,Store,TabName)
+%%     end;
+%% insert_dirs(Post,_Parent,Path,#ffs_file{},_Store,TabName) ->
+%%     error_handler:info_report(
+%%       io_lib:format("Trying to create ~p where a file exists.",[Path++Post]));
+%% insert_dirs([],_Parent,_Path,_dir,_Store,_TabName) ->
+%%     ok.
 
-add_store(TabName,Node,Store) ->
-    update_node(TabName,Node#ffs_node{
-			  stores = lists:usort([Store|Node#ffs_node.stores])}).
+%% add_store(TabName,Node,Store) ->
+%%     update_node(TabName,Node#ffs_node{
+%% 			  stores = lists:usort([Store|Node#ffs_node.stores])}).
 
-find_node(TabName,Name,[H|T]) ->
-    case ets:lookup(TabName,H) of
-	[#ffs_node{ name = Name }  = Node] ->
-	    Node;
-	_ ->
-	    find_node(TabName,Name,T)
-    end;
-find_node(_TabName,_Name,[]) ->
-    node_not_found.
+%% find_node(TabName,Name,[H|T]) ->
+%%     case ets:lookup(TabName,H) of
+%% 	[#ffs_node{ name = Name }  = Node] ->
+%% 	    Node;
+%% 	_ ->
+%% 	    find_node(TabName,Name,T)
+%%     end;
+%% find_node(_TabName,_Name,[]) ->
+%%     node_not_found.
 	    
 
 
-insert_dirs([{dir,Path}|T],Store,TabName) ->
-    insert_dirs(string:tokens(Path,"/"),1,"/",
-		ets:lookup_element(TabName,1,#ffs_node.data),Store,TabName),
-    insert_dirs(T,Store,TabName);
-insert_dirs([_|T],Store,TabName) ->
-    insert_dirs(T,Store,TabName);
-insert_dirs([],_Store,_TabName) ->
-    ok.
+%% insert_dirs([{dir,Path}|T],Store,TabName) ->
+%%     insert_dirs(string:tokens(Path,"/"),1,"/",
+%% 		ets:lookup_element(TabName,1,#ffs_node.data),Store,TabName),
+%%     insert_dirs(T,Store,TabName);
+%% insert_dirs([_|T],Store,TabName) ->
+%%     insert_dirs(T,Store,TabName);
+%% insert_dirs([],_Store,_TabName) ->
+%%     ok.
 
-insert_files(_,_Store,_TabName) ->
-    ok.
+%% insert_files(_,_Store,_TabName) ->
+%%     ok.
     
     
