@@ -175,7 +175,6 @@ remove_storage(Storage) -> ok | {error,Reason}
 and lost of file access functions like:
 chunk_ratio(Chunk) -> int()
 
-
 Friendfs Manager friendfs_mgr
 ===============
 
@@ -202,6 +201,117 @@ list() -> [Shunks]
 read(Chunk) -> Data
 write(Chunk, Data)
 
+
+Friendfs FAT ffs_fat
+======
+
+I (lukas) propose that the inode table should consist of three
+different ets tables:
+
+#ffs_inode{
+	inode,    %% int(): The inode number, unique per filesystem.
+	hash,     %% int(): A hash of the contents of the node
+	size,     %% int(): The size of the contents of this node
+	uid,      %% int(): The user which owns this node.
+	gid,      %% int(): The group which ownds this node.
+	mode,     %% int(): The access mode of this node, here information if
+	          %% this is a directory or not can be found
+	          %% drwxrwxrwx, 11 bits
+	ctime,    %% now(): When the node was created
+	atime,    %% now(): When the node was last accessed
+	mtime,    %% now(): When the node was last modified
+	refcount, %% int(): How many links this node has to it
+	ptr       %% str(): The name of this node on the remote side
+}.
+
+#ffs_link{
+	from,     %% int(): The inode directory from which this link comes.
+	to,       %% int(): The inode to which this link points.
+	name,     %% str(): The name of this link
+	type      %% atom(): What type of link this is, i.e. soft or hard
+}
+
+#ffs_xattr{
+	inode,    %% int(): The inode for which these attributes apply
+	attr      %% list(): A {key,value} tuple list containing extra
+	          %% information about each inode.
+}
+
+API:
+
+init(Name,PathEncryptionCallback) -> #ffs_tid{inode = tid(),
+					      link = tid(),
+					      xattr = tid(),
+					      encrypt_mfa = {M,F,A}}
+make_dir(#ffs_tid{},
+         Parent::inode,
+         Name::string,
+         Uid::int,
+	 Gid::int,
+	 Mode::int) -> #ffs_inode{}
+
+create(#ffs_tid{},
+       Parent::inode,
+       Name::string,
+       Uid::int,
+       Gid::int,
+       Mode::int,
+       Hash::int,
+       Size::int) -> #ffs_inode{}
+
+lookup(#ffs_tid{},
+       Inode::inode) -> #ffs_inode{}.
+
+find(#ffs_tid{},
+     Path::string) -> ##ffs_inode{}.
+
+link(#ffs_tid{},
+     From::inode,
+     To::inode,
+     Name::string,
+     Type::atom) -> #ffs_link{}.
+
+unlink(#ffs_tid{},
+       From::inode,
+       To::inode) -> #ffs_link{}.
+
+delete(#ffs_tid{},
+       Inode::inode) -> #ffs_inode{}.
+
+list_xattr(#ffs_tid{},
+           Inode::inode) -> #ffs_xattr{}.
+
+get_xattr(#ffs_tid{},
+          Inode::inode,
+	  Key::term) -> Value::term.
+
+set_xattr(#ffs_tid{},
+	  Inode::inode,
+	  Key::term,
+	  Value::term) -> #ffs_xattr{}.
+
+delete_xattr(#ffs_tid{},
+	     Inode::inode,
+	     Key::term) -> Value::term.
+
+move(#ffs_tid{},
+     OldFrom::inode,
+     OldTo::inode,
+     NewFrom::inode,
+     NewName::str) -> #ffs_link{}.
+
+rename(#ffs_tid{} = Tid,
+       From::inode,
+       To::inode,
+       NewName::str) -> move(Tid,From,To,From,NewName).
+
+access(#ffs_tid{},
+       Inode::inode) -> #ffs_inode{}.
+
+modify(#ffs_tid{],
+       Inode::inode,
+       NewHash::int,
+       NewSize::int) -> #ffs_inode{}.
 
 
 Process chart:
