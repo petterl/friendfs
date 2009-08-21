@@ -1,5 +1,7 @@
 EBIN=../ebin
 INCLUDE=../include
+TEST_DIR=../tests
+DBG_DIR=dbg
 ERL_CALL=erl_call
 ERL_COMPILE_FLAGS += -pz ../../../lib/fuserl-2.0.5/ebin/ -pz ../../../lib/friendfs-0.1.0/ebin/
 
@@ -22,10 +24,13 @@ all:$(EBIN) $(OBJECTS) $(APP)
 $(EBIN):
 	@mkdir $@
 
+$(DBG_DIR):
+	@mkdir $@
+
 $(OBJECTS): $(INCLUDES)
 
 clean:
-	rm -fr $(OBJECTS) $(APP) $(EBIN)
+	rm -fr $(OBJECTS) $(APP) $(EBIN) $(DBG)
 
 $(EBIN)/%.beam:%.erl
 	@echo "Compiling and loading $<"
@@ -46,3 +51,5 @@ $(EBIN)/%.app:%.appSrc
 	@echo "Compiling $(basename $<).app"
 	$(shell sed -e 's/modules[^}]*/modules,\[$(MODULES)\]/' $< > $@)
 
+test:$(DBG_DIR)
+	@erlc -I $(TEST_DIR) -W $(ERL_COMPILE_FLAGS) -DTEST -o$(DBG_DIR) $(SOURCES)

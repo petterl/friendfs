@@ -22,6 +22,11 @@ subdirs:
 		(cd $$d; $(MAKE)); \
 	done
 
+test:
+	@for d in $(DIRS); do \
+		(cd $$d; $(MAKE) test); \
+	done
+
 clean:
 	@for d in $(DIRS); do \
 		(cd $$d; $(MAKE) clean); \

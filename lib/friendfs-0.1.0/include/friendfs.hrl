@@ -1,3 +1,8 @@
+-define(NOTEST, true).
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -record(ffs_inode,{
 	  inode,    %% int(): The inode number, unique per filesystem.
 	  hash,     %% int(): A hash of the contents of the node
@@ -28,6 +33,7 @@
 	 }).
 
 -record(ffs_tid,{
+      name,     %% The name of this fat, used for the inode counter.
 	  inode,    %% Table ID of the inode ets table
 	  link,     %% Table ID of the link ets table
 	  xattr,    %% Table ID of the xattr ets table
@@ -36,10 +42,12 @@
 	 }).
 
 
+-define(U, ?U_R bor ?U_W bor ?U_X).
+-define(G, ?G_R bor ?G_W bor ?G_X).
+-define(O, ?O_R bor ?O_W bor ?O_X).
+-define(A, ?U bor ?G bor ?O).
+
 -define(D,  2#1000000000).
--define(U,  ?U_R bor ?U_W bor ?U_X).
--define(G,  ?G_R bor ?G_W bor ?G_X).
--define(O,  ?O_R bor ?O_W bor ?O_X).
 
 -define(U_R,2#0100000000).
 -define(U_W,2#0010000000).
