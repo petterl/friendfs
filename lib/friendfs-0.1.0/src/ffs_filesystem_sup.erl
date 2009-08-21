@@ -47,7 +47,8 @@ start_filesystem(Args) ->
 %%
 %%--------------------------------------------------------------------
 init([Args]) ->
-	Specs = get_filesystems(Args,[]),
+    ffs_fat:init_counters(),
+    Specs = get_filesystems(Args,[]),
     {ok, {{one_for_one, 10, 10},
           Specs}}.
 

@@ -34,3 +34,24 @@
 	  path_mfa  %% The {M,F,A} to call with [Action,String|A] where Action is
 	            %% encrypt or decrypt and String is a file or directory path.
 	 }).
+
+
+-define(D,  2#1000000000).
+-define(U,  ?U_R bor ?U_W bor ?U_X).
+-define(G,  ?G_R bor ?G_W bor ?G_X).
+-define(O,  ?O_R bor ?O_W bor ?O_X).
+
+-define(U_R,2#0100000000).
+-define(U_W,2#0010000000).
+-define(U_X,2#0001000000).
+
+-define(G_R,2#0000100000).
+-define(G_W,2#0000010000).
+-define(G_X,2#0000001000).
+
+-define(O_R,2#0000000100).
+-define(O_W,2#0000000010).
+-define(O_X,2#0000000001).
+
+
+
