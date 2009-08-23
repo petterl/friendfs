@@ -19,7 +19,7 @@
 -export([start_link/2]).
 
 %% Storage API
--export([list/1,read/3, write/3, delete/2, make_dir/2, read_node_info/2]).
+-export([list/2,read/3, write/3, delete/2, make_dir/2, lookup/2]).
 
 
 %% gen_server callbacks
@@ -60,8 +60,8 @@ start_link(Name,Args) ->
 %% list(Name) -> [Storage]
 %% @end
 %%--------------------------------------------------------------------
-list(Name) ->
-    gen_server:call(Name, list).
+list(Name,INodeI) ->
+    gen_server:call(Name, {list,INodeI}).
 
 
 %%--------------------------------------------------------------------
@@ -118,8 +118,8 @@ make_dir(Name, Path) ->
 %%   read_node_info(Name,Path) -> #ffs_node{} | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-read_node_info(Name,Path) ->
-    gen_server:call(Name, {read_node_info, Path}).
+lookup(Name,Inode) ->
+    gen_server:call(Name, {lookup, Inode}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -138,7 +138,7 @@ read_node_info(Name,Path) ->
 %%--------------------------------------------------------------------
 init([State,_Args]) ->
     process_flag(trap_exit,true),
-    Tid = ffs_fat:init(State#state.name,{?MODULE,path_encoding,[]}),
+    Tid = ffs_fat:init(State#state.name),
     NewState = State#state{ fat = Tid },
     {ok, NewState}.
 
@@ -156,8 +156,14 @@ init([State,_Args]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call(list, _From, State) ->
-    {reply, ets:tab2list(State#state.fat), State};
+handle_call({list,InodeI}, _From, State) ->
+	Links = ffs_fat:list(State#state.fat,InodeI),
+	List = lists:map(fun(#ffs_link{ name = Name, to = To }) ->
+					{Name,ffs_fat:lookup(State#state.fat,To)}
+		end,Links),
+    {reply, List , State};
+handle_call({lookup,Inode},_From,State) ->
+	{reply, ffs_fat:lookup(State#state.fat,Inode),State};
 handle_call({read_node_info,Path}, _From, #state{ fat = TabName} = State) ->
     case read_node_info_ets(TabName,Path) of
 	enoent ->

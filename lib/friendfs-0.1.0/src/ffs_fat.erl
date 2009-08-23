@@ -27,7 +27,7 @@
 	 list_xattr/2,
 	 get_xattr/3,
 	 set_xattr/4,
-	 delete_xattr/3,
+	 delete_xattr/3
 ]).
 
 %% Internal
@@ -47,6 +47,11 @@
 %%====================================================================
 %% API
 %%====================================================================
+%% @spec init(Name::atom()) -> ffs_tid()
+%% @equiv init(Name, {ffs_fat,path_parse,[]})ter
+init(Name) ->
+	init(Name,{ffs_fat,path_parse,[]}).
+	
 %%--------------------------------------------------------------------
 %% @doc
 %% Description
@@ -56,8 +61,6 @@
 %% @end
 %% @type ffs_tid() = #ffs_tid{}.
 %%--------------------------------------------------------------------
-init(Name) ->
-	init(Name,{ffs_fat,path_parse,[]}).
 init(Name,PathEncryptionCallback) ->
     ets:insert(?COUNTER_TABLE,{Name,0}),
     Tid = #ffs_tid{ 
@@ -110,16 +113,11 @@ make_dir(Tid,
 %% @end
 %%--------------------------------------------------------------------
 create(#ffs_tid{ inode = InodeTid, xattr = XattrTid, path_mfa = {M,F,A}} = Tid,
-       Parent,
-       Name,
-       Uid,
-       Gid,
-       Mode,
-       Hash,
-       Size) ->
+       Parent, Name, Uid, Gid, Mode, Hash, Size) ->
 	NewInodeI = ets:update_counter(?COUNTER_TABLE,Tid#ffs_tid.name,1),
 	Path = get_path_to_inode(Tid,Parent) ++ Name,
 	Timestamp = now(),
+	
     NewInode = #ffs_inode{
       inode = NewInodeI,
       hash = Hash,
@@ -157,11 +155,11 @@ lookup(Tid,BaseInode,Path) ->
 		true ->
 			lookup(Tid,Inode)
 	end.
-lookup(#ffs_tid{ inode = InodeTid },Inode) -> 
-	case ets:lookup(InodeTid,Inode) of
+lookup(#ffs_tid{ inode = InodeTid },InodeI) -> 
+	case ets:lookup(InodeTid,InodeI) of
 		[] ->
 			enoent;
-		Inode ->
+		[Inode] ->
 			Inode
 	end.
 
@@ -187,8 +185,8 @@ find(#ffs_tid{ link = LinkTid } = Tid,Inode,[Name|Path]) ->
 		#ffs_link{ to = Next } ->
 			find(Tid,Next,Path)
 	end;
-find(Tid, Inode, []) ->
-	lookup(Tid,Inode).
+find(_Tid, Inode, []) ->
+	Inode.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -315,7 +313,7 @@ access(#ffs_tid{ inode = InodeTid } = Tid, InodeI) ->
 %%   function(Args) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-modify(#ffs_tid{ inode = InodeTid },
+modify(#ffs_tid{ inode = InodeTid } = Tid,
        InodeI,
        NewHash,
        NewSize) -> 
@@ -382,8 +380,16 @@ delete_xattr(#ffs_tid{},
 %% Internal functions
 %%====================================================================
 
-get_path_to_inode(_Tid,_Inode) ->
-	"".
+get_path_to_inode(Tid,Inode) ->
+	get_path_to_inode(Tid,Inode,"").
+get_path_to_inode(_Tid,1,Path) ->
+	lists:flatten(["/"|Path]);
+get_path_to_inode(Tid,Inode,Acc) ->
+	ParentInode = find(Tid,Inode,".."),
+	Links = ets:match_object(Tid#ffs_tid.link,
+							 #ffs_link{ from = ParentInode, 
+										to = Inode, _ = '_' }),
+	get_path_to_inode(Tid,ParentInode,[(hd(Links))#ffs_link.name,"/"|Acc]).
 	
 path_parse(encrypt,Path,#ffs_inode{ mode = M },[]) when ((M band ?D) =:= 0) ->
 	re:replace(Path,"/","-",[global,{return,list}])++"?file.ffs";

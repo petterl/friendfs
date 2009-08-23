@@ -61,7 +61,7 @@ rel: update_rel rts
 update_rel: friendfs.rel
 	escript runtime.escript update_rel $<
 
-check_environment: erts-$(ERTS_VSN) $(APP_VSNS:%=lib/%) releases/$(REL_VSN)/start.boot releases/$(REL_VSN)/sys.config releases/start_erl.data bin pipes log
+check_environment: erts-$(ERTS_VSN) $(APP_VSNS:%=lib/%) releases/$(REL_VSN)/start.boot releases/$(REL_VSN)/sys.config releases/start_erl.data bin pipes log patches
 
 
 releases/$(REL_VSN)/%.boot: $(APPNAME).script releases/$(REL_VSN)
@@ -100,5 +100,5 @@ bin:
 	cp scripts/start_friendfs bin/
 	chmod +x $@/start_friendfs
 
-pipes log:
+pipes log patches:
 	mkdir -p $@
