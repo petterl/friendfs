@@ -43,7 +43,7 @@ start_link(FSName,Url) ->
 %%--------------------------------------------------------------------
 init([FSName,Url]) ->
     {_Scheme, _Host, Path, _Query, _Fragment} =
-        friendfs_lib:split_url(Url),
+        ffs_lib:split_url(Url),
     case file:list_dir(Path) of
         {ok, List} ->
 	    gen_server:cast(FSName,{connect,self(),Url,List}),

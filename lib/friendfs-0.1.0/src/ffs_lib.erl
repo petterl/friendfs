@@ -4,10 +4,10 @@
 %%% Library of internal functions for FriendFS
 %%% @end
 %%%-------------------------------------------------------------------
--module(friendfs_lib).
+-module(ffs_lib).
 
 
--export([split_url/1,urlsplit_scheme/1,parse_config/2,parse_config/1,scan_config_str/2]).
+-export([split_url/1,urlsplit_scheme/1,read_config/2,parse_config/1,scan_config_str/2]).
 -define(DELIMS,[$ ,$\n,$#,$>,$<,$\t]).
 
 split_url(Url) ->
@@ -94,25 +94,68 @@ urlsplit_query([C | Rest], Acc) ->
 %% @spec parse_config(Config,Defaults) -> [{key,value}|{key,value,list}]
 %% @doc Parses a config file and uses Defaults to fill in the blanks.
 %%
-parse_config(Config,Defaults) ->
-	ErlDefaults = parse_defaults(Defaults),
-	ErlConfig = parse_config(Config),
-	validate_and_fill(ErlConfig,ErlDefaults).
-	
+read_config(Config,Defaults) ->
+    ErlDefaults = parse_defaults(Defaults),
+    ErlConfig = parse_config(Config),
+    case {ErlDefaults,ErlConfig} of
+	{{ok,Def},{ok,Conf}} ->
+	    validate_and_fill(Conf,Def);
+		{{ok,_},_} ->
+	    io:format("Could not parse ~p\n",[Config]),
+	    invalid_config;
+	{_,{ok,_}} ->
+	    io:format("Could not parse ~p\n",[Defaults]),
+	    invalid_defaults
+    end.
+
+	    
+
 parse_config(Path) ->
-	case file:read_file(Path) of
-		{ok,Bin} -> 
-			Scan = scan_config_str(binary_to_list(Bin),1),
-			ffs_config:parse(Scan);
-		Error -> {error,?MODULE,parse_config,Error}
-	end.
+    case file:read_file(Path) of
+	{ok,Bin} -> 
+	    Scan = scan_config_str(binary_to_list(Bin),1),
+	    ffs_config:parse(Scan);
+	Error -> {error,?MODULE,parse_config,Error}
+    end.
 	
 parse_defaults(Path) ->
-	[].
+    case file:read_file(Path) of
+	{ok,Bin} -> 
+	    Scan = scan_config_str(binary_to_list(Bin),1),
+	    ffs_config:parse(Scan);
+	Error -> {error,?MODULE,parse_config,Error}
+    end.
 	
 validate_and_fill(Config,Def) ->
-	Config.
-	
+    {Global,Local} = get_global_config(Config,[],[]),
+    LocalWGlobal = fill_local(Local,Global),
+    add_defaults(Def,LocalWGlobal).
+
+get_global_config([{_Var,_Key} = Conf|T],GlobalAcc,LocalAcc) ->
+    get_global_config(T,[Conf|GlobalAcc],LocalAcc);
+get_global_config([Else|T],GlobalAcc,LocalAcc) ->
+    get_global_config(T,GlobalAcc,[Else|LocalAcc]);
+get_global_config([],GlobalAcc,LocalAcc) ->
+    {GlobalAcc,LocalAcc}.
+
+fill_local([{Key,Val,Children}|T],Global) ->
+    NewChildren = lists:foldl(
+		    fun({GlobalKey,GlobalVal},ChildList) ->
+			    case proplists:get_value(GlobalKey,ChildList) of
+				undefined ->
+				    [{GlobalKey,GlobalVal}|ChildList];
+				_Else ->
+				    ChildList
+			    end
+		    end,Children,Global),
+    [{Key,Val,NewChildren}|fill_local(T,Global)];
+fill_local([],_Global) ->
+    [].
+
+add_defaults(_,Config) ->
+    Config.
+
+
 scan_config_str([$#|T],Line) ->
 	{Comment,Tail} = read_until_chars(T,[$\n]),
 	[{comment,Line,Comment}|scan_config_str(Tail,Line)];
@@ -158,3 +201,11 @@ make_int(Int) ->
 		{'EXIT',{badarg,_}} -> Int;
 		RealInt -> RealInt
 	end.
+
+
+new_store() ->
+    [].
+put_value(Store,Key,Value) ->
+    [{Key,Value}|Store].
+get_value(Store,Key) ->
+    proplists:get_value(Store,Key).

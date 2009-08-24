@@ -37,7 +37,7 @@
 	  mkdir/6,
 	  mknod/7,
 	  open/5,
-	  opendir/5,
+%	  opendir/5,
 	  read/7,
 	  readdir/7,
 	  readlink/4,
@@ -200,8 +200,9 @@ getlk (_Ctx, _Inode, _Fi, _Lock, _Cont, _State) -> ?DBG("getlk called"),
 %% and the second argument of type getxattr_async_reply ().
 %% @end
 
-getxattr (_Ctx, _Inode, _Name, _Size, _Cont, _State) -> ?DBG("getxattr called"),
-  erlang:throw (not_implemented).
+getxattr (_Ctx, _Inode, _Name, _Size, _Cont, State) ->
+    ?DBG("getxattr called"),
+    {#fuse_reply_err{ err = enoent },State}.
 
 %% @spec link (Ctx::#fuse_ctx{}, Ino::integer (), NewParent::integer (), NewName::binary (), Cont::continuation (), State) -> { link_async_reply (), NewState } | { noreply, NewState }
 %%  link_async_reply () = #fuse_reply_entry{} | #fuse_reply_err{}
@@ -242,8 +243,24 @@ listxattr (_Ctx, _Ino, _Size, _Cont, _State) -> ?DBG("listxattr called"),
 %% and the second argument of type lookup_async_reply ().
 %% @end
 
-lookup (_Ctx, _ParentInode, _Name, _Cont, _State) -> ?DBG("lookup called"),
-  erlang:throw (not_implemented).
+lookup (_Ctx, ParentInodeI, BinName, _Cont, State) ->
+    ?DBG("lookup called"),
+    Name = erlang:binary_to_list (BinName),
+    case ffs_filesystem:find(State#state.filesystem,ParentInodeI,Name) of
+	enoent ->
+	    {#fuse_reply_err{ err = enoent },State};
+	#ffs_inode{ inode = InodeI } = Inode ->
+	    {#fuse_reply_entry
+	     { fuse_entry_param =
+	       #fuse_entry_param{ ino = InodeI,
+				  generation = element(3,now()),
+				  attr = stat(Inode),
+				  attr_timeout_ms = 100,
+				  entry_timeout_ms = 100} },
+	     State}
+    end.
+    
+  
 
 %% @spec mkdir (Ctx::#fuse_ctx{}, ParentInode::integer (), Name::binary (), Mode::stat_mode (), Cont::continuation (), State) -> { mkdir_async_reply (), NewState } | { noreply, NewState }
 %%  mkdir_async_reply () = #fuse_reply_entry{} | #fuse_reply_err{}
@@ -288,8 +305,9 @@ open (_Ctx, _Inode, _Fi, _Cont, _State) -> ?DBG("open called"),
 %% opendir_async_reply ().
 %% @end
 
-opendir (_Ctx, Inode, Fi, _Cont, State) -> ?DBG("opendir called"),
-  {#fuse_reply_open{ fuse_file_info = Fi},State}.
+%opendir (_Ctx, _Inode, Fi, _Cont, State) ->
+%    ?DBG("opendir called"),
+%    {#fuse_reply_open{ fuse_file_info = Fi},State}.
 
 %% @spec read (Ctx::#fuse_ctx{}, Inode::integer (), Size::integer (), Offset::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { read_async_reply (), NewState } | { noreply, NewState }
 %%   read_async_reply () = #fuse_reply_buf{} | #fuse_reply_err{}
@@ -316,12 +334,17 @@ read (_Ctx, _Inode, _Size, _Offset, _Fi, _Cont, _State) -> ?DBG("read called"),
 %% and the second argument of type readdir_async_reply ().
 %% @end
 
-readdir (_Ctx, InodeI, _Size, Offset, _Fi, _Cont, State) -> ?DBG("readdir called"),
-	FfsList = ffs_filesystem:list(State#state.filesystem,InodeI),
-	{List,_} = lists:mapfoldl(fun({Name,Inode},Offset) -> 
-							  {#direntry{ name = Name, offset = Offset,stat = stat(Inode)},Offset+1}
-					 	  end,Offset+1,lists:nthtail(Offset,FfsList)),
-	{#fuse_reply_direntrylist{ direntrylist = List },State}.
+readdir (_Ctx, InodeI, _Size, Offset, _Fi, _Cont, State) ->
+    ?DBG("readdir called"),
+    FfsList = ffs_filesystem:list(State#state.filesystem,InodeI),
+    {List,_} = lists:mapfoldl(
+		 fun({Name,Inode},Offset) -> 
+			 {#direntry{ name = Name,
+				     offset = Offset,
+				     stat = stat(Inode)},
+			  Offset+1}
+		 end,Offset+1,lists:nthtail(Offset,FfsList)),
+    {#fuse_reply_direntrylist{ direntrylist = List },State}.
 
 
 %% @spec readlink (Ctx::#fuse_ctx{}, Inode::integer (), Cont::continuation (), State) -> { readlink_async_reply (), NewState } | { noreply, NewState }
@@ -455,19 +478,34 @@ setxattr (_Ctx, _Inode, _Name, _Value, _Flags, _Cont, _State) -> ?DBG("setxattr 
 %% and the second argument of type statfs_async_reply ().
 %% @end
 
-statfs (_Ctx, _Inode, _Cont, State) -> ?DBG("statfs called"),
-	S = #statvfs{ f_bsize=512,
-	  f_frsize=512,
-	  f_blocks = 0,
-	  f_bfree = 0,
-	  f_bavail = 0,
-	  f_files = 1 bsl 32,
-	  f_ffree = 1 bsl 32 - 1,
-	  f_favail = 1 bsl 32 - 1,
-	  f_fsid = 36#n54,
-	  f_flag = 0,
-	  f_namemax = 36#sup },
-	{ #fuse_reply_statfs{ statvfs = S }, State }.
+statfs (_Ctx, _Inode, _Cont, #state{ filesystem = FS} = State) ->
+    ?DBG("statfs called"),
+    
+    Config = ffs_filesystem:get_config(FS),
+    Stats  = ffs_filesystem:get_stats(FS),
+
+    BSize             = ffs_lib:get_value(Config,block_size),
+    TotInodes         = ffs_lib:get_value(Config,inode_limit),
+    FilesystemId      = ffs_lib:get_value(Config,filesystem_id),
+    MntOpts           = ffs_lib:get_value(Config,mnt_opts),
+    MaxFilenameLength = ffs_lib:get_value(Config,max_filename_size),
+    
+    TotMem        = ffs_lib:get_value(Stats,total_mem),
+    FreeMem       = ffs_lib:get_value(Stats,free_mem),
+    FreeInodes    = ffs_lib:get_value(Stats,free_inodes),
+    
+    S = #statvfs{ f_bsize=BSize,
+		  f_frsize=BSize,
+		  f_blocks = TotMem div BSize,
+		  f_bfree = FreeMem div BSize,
+		  f_bavail = FreeMem div BSize,
+		  f_files = TotInodes,
+		  f_ffree = FreeInodes,
+		  f_favail = FreeInodes,
+		  f_fsid = FilesystemId,
+		  f_flag = MntOpts,
+		  f_namemax = MaxFilenameLength },
+    { #fuse_reply_statfs{ statvfs = S }, State }.
 
 
 %% @spec symlink (Ctx::#fuse_ctx{}, Link::binary (), Inode::integer (), Name::binary (), Cont::continuation (), State) -> { symlink_async_reply (), NewState } | { noreply, NewState }
@@ -585,24 +623,26 @@ parse_options([],MountAcc,FfsAcc) ->
 to_unix({Mega,Secs,_Micro}) ->
 	Mega*1000000+Secs.
 	
-stat(#ffs_inode{ inode = Inode, gid = Gid, uid = Uid, atime = Atime, mtime = Mtime,
-				ctime = Ctime, refcount = Links, size = Size, mode = Mode } )  ->					
-	#stat{
-		st_dev = { 0, 0 },                  % ID of device containing file 
-		st_ino = Inode,                     % inode number 
-		st_mode = to_fuse_mode(Mode),       % protection 
-		st_nlink = Links,                   % number of hard links 
-		st_uid = Uid,                       % user ID of owner 
-		st_gid = Gid,                       % group ID of owner 
-		st_rdev = { 0, 0 },                 % device ID (if special file) 
-		st_size = Size,                     % total size = 0, in bytes 
-		st_blksize = 0,                     % blocksize for filesystem I/O 
-		st_blocks = 0,                      % number of blocks allocated 
-		st_atime = to_unix(Atime),          % time of last access 
-		st_mtime = to_unix(Mtime),          % time of last modification 
-		st_ctime = to_unix(Ctime)           % time of last status change
-	}.
-	
+stat(#ffs_inode{ inode = Inode, gid = Gid, uid = Uid,
+		 atime = Atime, mtime = Mtime,
+		 ctime = Ctime, refcount = Links,
+		 size = Size, mode = Mode } )  ->					
+    #stat{
+%      st_dev = { 0, 0 },                  % ID of device containing file 
+      st_ino = Inode,                     % inode number 
+      st_mode = to_fuse_mode(Mode),       % protection 
+      st_nlink = Links                   % number of hard links 
+%      st_uid = Uid,                       % user ID of owner 
+%      st_gid = Gid,                       % group ID of owner 
+%      st_rdev = { 0, 0 },                 % device ID (if special file) 
+%      st_size = Size,                     % total size = 0, in bytes 
+%      st_blksize = 0,                     % blocksize for filesystem I/O 
+%      st_blocks = 0,                      % number of blocks allocated 
+%      st_atime = to_unix(Atime),          % time of last access 
+%      st_mtime = to_unix(Mtime),          % time of last modification 
+%      st_ctime = to_unix(Ctime)           % time of last status change
+     }.
+
 -define(MAP_BITS,[{?D,?S_IFDIR},
 				  {?U_R,?S_IRUSR},
 				  {?U_W,?S_IWUSR},

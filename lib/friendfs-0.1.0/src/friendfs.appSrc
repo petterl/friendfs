@@ -7,4 +7,5 @@
               {mod,{friendfs,[]}},
               {env,[{linked_in,false},
 		    {config_path,"lib/friendfs-0.1.0/doc/test.config"},
+		    {config_default_path,"lib/friendfs-0.1.0/priv/defaults.config"},
                     {mount_opts,"default_permissions"}]}]}.

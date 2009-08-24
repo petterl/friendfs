@@ -19,7 +19,8 @@
 -export([start_link/2]).
 
 %% Storage API
--export([list/2,read/3, write/3, delete/2, make_dir/2, lookup/2]).
+-export([list/2,read/3, write/3, delete/2, make_dir/2, lookup/2, find/3,
+	 get_config/1,get_stats/1]).
 
 
 %% gen_server callbacks
@@ -112,14 +113,48 @@ make_dir(Name, Path) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Get information about the node in the given path.
+%% Get information about the node.
 %%
 %% @spec
-%%   read_node_info(Name,Path) -> #ffs_node{} | {error, Error}
+%%   lookup(Name,Inode) -> #ffs_node{} | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
 lookup(Name,Inode) ->
     gen_server:call(Name, {lookup, Inode}).
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Get information about the node in the given path.
+%%
+%% @spec
+%%   read_node_info(Name,Inode,Path) -> #ffs_node{} | {error, Error}
+%% @end
+%%--------------------------------------------------------------------
+find(Name,Inode,Path) ->
+    gen_server:call(Name, {find, Inode, Path}).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Get config values of the filesystem
+%%
+%% @spec
+%%   get_config(Name) -> prop_list() | {error, Error}
+%% @end
+%%--------------------------------------------------------------------
+get_config(Name) ->
+    gen_server:call(Name, get_config).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Get statistics about the filesystem
+%%
+%% @spec
+%%   get_stats(Name) -> prop_list() | {error, Error}
+%% @end
+%%--------------------------------------------------------------------
+get_stats(Name) ->
+    gen_server:call(Name, get_stats).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -163,7 +198,29 @@ handle_call({list,InodeI}, _From, State) ->
 		end,Links),
     {reply, List , State};
 handle_call({lookup,Inode},_From,State) ->
-	{reply, ffs_fat:lookup(State#state.fat,Inode),State};
+    {reply, ffs_fat:lookup(State#state.fat,Inode),State};
+handle_call({find,ParentInodeI,Path},_From,State) ->
+    Ret = case ffs_fat:find(State#state.fat,ParentInodeI,Path) of
+	      enoent ->
+		  enoent;
+	      Inode ->
+		  ffs_fat:lookup(State#state.fat,Inode)
+	  end,
+    {reply, Ret, State};
+handle_call(config,_From, State) ->
+    {reply,ok,State};
+
+
+
+
+
+
+
+
+
+
+
+%% Old code
 handle_call({read_node_info,Path}, _From, #state{ fat = TabName} = State) ->
     case read_node_info_ets(TabName,Path) of
 	enoent ->

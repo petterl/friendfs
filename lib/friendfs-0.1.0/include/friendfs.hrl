@@ -62,4 +62,14 @@
 -define(O_X,2#0000000001).
 
 
+%% Config keys
+-define(BLOCK_SIZE,"BlockSize").
+-define(INODE_LIMIT,"MaxInodes").
+-define(FILESYSTEM_ID,"FilesystemId").
+-define(MNT_OPTS,"MountOptions").
+-define(MAX_FILENAME_SIZE,"MaxFilenameSize").
 
+%% Statistics keys
+-define(TOT_MEM,tot_mem).
+-define(FREE_MEM,free_mem).
+-define(FREE_INODES,free_inodes).

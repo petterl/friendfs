@@ -69,7 +69,7 @@ init(Name,PathEncryptionCallback) ->
 		    link = ets:new(Name,[{keypos,#ffs_link.from},bag]),
 		    xattr = ets:new(Name,[{keypos,#ffs_xattr.inode},set]),
 		    path_mfa = PathEncryptionCallback },
-    create(Tid,1,"..",1,2,?D bor ?U,0,0),
+    create(Tid,1,"..",0,0,?D bor ?A,0,4096),
     Tid.
 
 %%--------------------------------------------------------------------
@@ -99,7 +99,7 @@ make_dir(Tid,
 	     Gid,
 	     Mode) -> 
 	
-	Inode = create(Tid,Parent,Name,Uid,Gid,Mode bor ?D,0,0),
+	Inode = create(Tid,Parent,Name,Uid,Gid,Mode bor ?D,0,4096),
 	ln(Tid,Inode#ffs_inode.inode,Parent,"..",hard),
 	
 	Inode.

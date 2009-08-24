@@ -22,16 +22,18 @@ start(Type) ->
 %% @hidden
 
 start(_Type, _Args) ->
-	{ok,ConfigPath} = application:get_env(friendfs,config_path),
-
-	Config = case friendfs_lib:parse_config(ConfigPath) of
-				{ok,Config0} ->
-					Config0;
-				_Else ->
-					io:format("Could not read config file!"),
-					exit(1)
-				end,
-
+    {ok,ConfigPath} = application:get_env(friendfs,config_path),
+    {ok,DefaultsPath} = application:get_env(friendfs,config_default_path),
+    
+    Config = case ffs_lib:read_config(ConfigPath,DefaultsPath) of
+		 {ok,Config0} ->
+		     io:format("Loading configuration ~p\n",[Config0]),
+		     Config0;
+		 _Else ->
+		     io:format("Could not read config file!"),
+		     exit(1)
+	     end,
+    
     friendfs_sup:start_link(Config).
 
 %% @hidden
