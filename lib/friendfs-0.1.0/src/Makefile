@@ -1,7 +1,7 @@
 EBIN=../ebin
 INCLUDE=../include
 TEST_DIR=../tests
-DBG_DIR=dbg
+DBG_DIR=dbg/
 ERL_CALL=erl_call
 ERL_COMPILE_FLAGS += -pz ../../../lib/fuserl-2.0.5/ebin/ -pz ../../../lib/friendfs-0.1.0/ebin/
 
@@ -18,6 +18,8 @@ YRL_OBJECTS=$(YRL_SOURCES:%.yrl=$(EBIN)/%.beam)
 MODULES := $(shell echo $(SOURCES:%.erl=%) | sed 's/ /,/g')
 
 OBJECTS=$(SOURCES:%.erl=$(EBIN)/%.beam) $(YRL_OBJECTS) $(APP_TARGET) $(APPUP_TARGET)
+TEST_SOURCE =$(wildcard $(TEST_DIR)/*.hrl) 
+TEST_OBJECTS=$(TEST_SOURCE:$(TEST_DIR)/%.hrl=$(DBG_DIR)/%.beam)
 
 all:$(EBIN) $(OBJECTS) $(APP)
 
@@ -30,7 +32,7 @@ $(DBG_DIR):
 $(OBJECTS): $(INCLUDES)
 
 clean:
-	rm -fr $(OBJECTS) $(APP) $(EBIN) $(DBG)
+	rm -fr $(OBJECTS) $(APP) $(EBIN) $(DBG_DIR)
 
 $(EBIN)/%.beam:%.erl
 	@echo "Compiling and loading $<"
@@ -51,5 +53,9 @@ $(EBIN)/%.app:%.appSrc
 	@echo "Compiling $(basename $<).app"
 	$(shell sed -e 's/modules[^}]*/modules,\[$(MODULES)\]/' $< > $@)
 
-test:$(DBG_DIR)
-	@erlc -I $(TEST_DIR) -W $(ERL_COMPILE_FLAGS) -DTEST -o$(DBG_DIR) $(SOURCES)
+$(DBG_DIR)/%.beam:%.erl $(TEST_DIR)/%.hrl
+	@erlc -I $(TEST_DIR) -W $(ERL_COMPILE_FLAGS) -DTEST -o $(DBG_DIR)/ $<
+	@echo "Testing $(basename $(notdir $@))"
+	@erl -noshell -pa dbg/ -s eunit test $(basename $<) -s init stop
+
+test:all $(DBG_DIR) $(TEST_OBJECTS)
