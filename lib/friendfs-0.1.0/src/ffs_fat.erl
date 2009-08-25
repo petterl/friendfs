@@ -69,7 +69,7 @@ init(Name,PathEncryptionCallback) ->
 		    link = ets:new(Name,[{keypos,#ffs_link.from},bag]),
 		    xattr = ets:new(Name,[{keypos,#ffs_xattr.inode},set]),
 		    path_mfa = PathEncryptionCallback },
-    create(Tid,1,"..",0,0,?D bor ?A,0,4096),
+    create(Tid,1,"..",0,0,?D bor ?A,0,0),
     Tid.
 
 %%--------------------------------------------------------------------
