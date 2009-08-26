@@ -47,7 +47,7 @@ $(EBIN)/%.beam:%.erl
 		"code load_file [$(basename $<)]"  >> /tmp/log 2> /dev/null )
 
 %.erl:%.yrl
-	@erl -noshell -s yecc file $< -s init stop > /dev/null
+	@erl -boot start_clean -noshell -s yecc file $< -s init stop > /dev/null
 
 $(EBIN)/%.app:%.appSrc
 	@echo "Compiling $(basename $<).app"
@@ -56,6 +56,6 @@ $(EBIN)/%.app:%.appSrc
 $(DBG_DIR)/%.beam:%.erl $(TEST_DIR)/%.hrl
 	@erlc -I $(TEST_DIR) -W $(ERL_COMPILE_FLAGS) -DTEST -o $(DBG_DIR)/ $<
 	@echo "Testing $(basename $(notdir $@))"
-	@erl -noshell -pa dbg/ -s eunit test $(basename $<) -s init stop
+	@erl -boot start_clean -noshell -pa dbg/ -s eunit test $(basename $<) -s init stop
 
 test:all $(DBG_DIR) $(TEST_OBJECTS)
