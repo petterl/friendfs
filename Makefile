@@ -51,15 +51,15 @@ rts:
 	mkdir rts
 
 install: all rel
-	escript  runtime.escript create_tar friendfs.rel
+	escript $(RUNTIME) create_tar friendfs.rel
 	cp friendfs.tar.gz rts
 	(cd rts && tar xvzf friendfs.tar.gz)
 
 rel: update_rel rts
-	escript  runtime.escript create_rel friendfs.rel
+	escript $(RUNTIME) create_rel friendfs.rel
 
 update_rel: friendfs.rel
-	escript runtime.escript update_rel $<
+	escript $(RUNTIME) update_rel $<
 
 check_environment: erts-$(ERTS_VSN) $(APP_VSNS:%=lib/%) releases/$(REL_VSN)/start.boot releases/$(REL_VSN)/sys.config releases/start_erl.data bin pipes log patches
 
