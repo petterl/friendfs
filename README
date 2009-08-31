@@ -1,1 +1,11 @@
-Test
+To setup and start developing to the following:
+
+make && make check_environment
+
+You then can start and connect to the erlang VM using the command:
+
+scripts/friendfsctrl start
+
+scripts/friendfsctrl connect
+
+If you have any question rtfs!
