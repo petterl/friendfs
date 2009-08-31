@@ -99,12 +99,12 @@ read_config(Config,Defaults) ->
     ErlConfig = parse_config(Config),
     case {ErlDefaults,ErlConfig} of
 	{{ok,Def},{ok,Conf}} ->
-	    validate_and_fill(Conf,Def);
-		{{ok,_},_} ->
-	    io:format("Could not parse ~p\n",[Config]),
+	    {ok,validate_and_fill(Conf,Def)};
+	{{ok,_},Error} ->
+	    io:format("Could not parse ~p\nReason: ~p\n",[Config,Error]),
 	    invalid_config;
-	{_,{ok,_}} ->
-	    io:format("Could not parse ~p\n",[Defaults]),
+	{Error,{ok,_}} ->
+	    io:format("Could not parse ~p\nReason: ~p\n",[Defaults,Error]),
 	    invalid_defaults
     end.
 
