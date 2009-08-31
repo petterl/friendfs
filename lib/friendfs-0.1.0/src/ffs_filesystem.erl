@@ -29,7 +29,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {name, fat, storages = []}).
+-record(state, {name, fat, stats, config, storages = []}).
 
 -record(storage, {
 	  filelist = [],       % A list of files which exist in this store.
@@ -174,7 +174,17 @@ get_stats(Name) ->
 init([State,_Args]) ->
     process_flag(trap_exit,true),
     Tid = ffs_fat:init(State#state.name),
-    NewState = State#state{ fat = Tid },
+	Stats = [{total_mem,0},
+			 {free_mem,0},
+    		 {free_inodes,1 bsl 32 - 1}],
+	
+	Config = [{block_size,512},
+    		  {inode_limit,1 bsl 32},
+    		  {filesystem_id,1},
+    		  {mnt_opts,0},
+    		  {max_filename_size,36#sup}],
+
+    NewState = State#state{ fat = Tid, stats = Stats, config = Config },
     {ok, NewState}.
 
 %%--------------------------------------------------------------------
@@ -207,8 +217,10 @@ handle_call({find,ParentInodeI,Path},_From,State) ->
 		  ffs_fat:lookup(State#state.fat,Inode)
 	  end,
     {reply, Ret, State};
-handle_call(config,_From, State) ->
-    {reply,ok,State};
+handle_call(get_config,_From, State) ->
+    {reply,State#state.config,State};
+handle_call(get_stats,_From, State) ->
+    {reply,State#state.stats,State};
 
 
 
