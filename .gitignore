@@ -19,3 +19,7 @@ lib/sasl-*
 lib/stdlib-*
 log
 releases
+*.html
+*erlang.png
+*stylesheet.css
+*edoc-info
