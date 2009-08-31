@@ -9,19 +9,19 @@
 -module(ffs_fat).
 
 %% API
--export([init/2,init/1,
+-export([init/1,
 	 init_counters/0,
 	 make_dir/6,
 	 create/8,
 	 lookup/2,
-	 lookup/3,
-	 find/2,
 	 find/3,
 	 list/2,
-	 list/3,
 	 ln/5,
 	 unlink/3,
 	 rename/4,
+	 chmod/3,
+	 chown/3,
+	 chgrp/3,
 	 access/2,
 	 modify/4,
 	 list_xattr/2,
@@ -29,9 +29,6 @@
 	 set_xattr/4,
 	 delete_xattr/3
 ]).
-
-%% Internal
--export([path_parse/4]).
 
 -include_lib("friendfs/include/friendfs.hrl").
 
@@ -43,53 +40,67 @@
 %%====================================================================
 %% Typedefs
 %%====================================================================
+%% @type ffs_tid() = #ffs_tid{}. 
+%%     Contains information about which tables to use.
+%% @end
+%%
+%% @type ffs_inode() = #ffs_inode{}.
+%%     Contains information about a specific inode.
+%% @end
+%%
+%% @type ffs_link() = #ffs_link{}.
+%%     Contains information about a specifik link.
+%% @end
+%%
+%% @type inodei() = integer().
+%%      An integer refering to an inode in the inode array.
+%% @end
 
 %%====================================================================
 %% API
 %%====================================================================
-%% @spec init(Name::atom()) -> ffs_tid()
-%% @equiv init(Name, {ffs_fat,path_parse,[]})ter
-init(Name) ->
-	init(Name,{ffs_fat,path_parse,[]}).
-	
 %%--------------------------------------------------------------------
 %% @doc
-%% Description
+%% Initiate a new ffs_fat system. The return value of this function 
+%% is usedd as indata to all other functions in this module. 
 %%
-%% @spec init(Name::atom(),PathEncryptionCallback:MFA) -> ffs_tid() | {error, Error}
-%%   MFA = {M::atom(),F::atom(),A::list()}
+%% @spec init(Name) -> ffs_tid()
+%%     Name = atom()
 %% @end
-%% @type ffs_tid() = #ffs_tid{}.
 %%--------------------------------------------------------------------
-init(Name,PathEncryptionCallback) ->
+init(Name) ->
     ets:insert(?COUNTER_TABLE,{Name,0}),
     Tid = #ffs_tid{ 
             name = Name,
 		    inode = ets:new(Name,[{keypos,#ffs_inode.inode},set]),
 		    link = ets:new(Name,[{keypos,#ffs_link.from},bag]),
-		    xattr = ets:new(Name,[{keypos,#ffs_xattr.inode},set]),
-		    path_mfa = PathEncryptionCallback },
+		    xattr = ets:new(Name,[{keypos,#ffs_xattr.inode},set])},
     create(Tid,1,"..",0,0,?D bor ?A,0,0),
     Tid.
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Description
+%% Initate the counter used to find new Inode numbers. This needs to be
+%% called before calling the first init/1 call.
 %%
-%% @spec init(Name::atom(),PathEncryptionCallback:MFA) -> ffs_tid() | {error, Error}
-%%   MFA = {M::atom(),F::atom(),A::list()}
+%% @spec init_counters() -> pid()
 %% @end
-%% @type ffs_tid() = #ffs_tid{}.
 %%--------------------------------------------------------------------
 init_counters() ->
     ets:new(?COUNTER_TABLE,[public,named_table,{keypos,1},set]).
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Description
+%% 
 %%
 %% @spec
-%%   function(Args) -> ok | {error, Error}
+%%   make_dir(Tid,Parent,Name,Uid,Gid,Mode) -> ffs_inode()
+%%      Tid = ffs_tid()
+%%      Parent = inodei()
+%%      Name = string()
+%%      Uid = integer()
+%%      Gid = integer()
+%%      Mode = integer()
 %% @end
 %%--------------------------------------------------------------------
 make_dir(Tid,
@@ -106,16 +117,23 @@ make_dir(Tid,
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Description
+%% 
 %%
 %% @spec
-%%   function(Args) -> ok | {error, Error}
+%%   create(Tid, Parent, Name, Uid, Gid, Mode, Hash, Size) -> ffs_inode()
+%%      Tid = ffs_tid()
+%%      Parent = inodei()
+%%      Name = string()
+%%      Uid = integer()
+%%      Gid = integer()
+%%      Mode = integer()
+%%      Hash = integer()
+%%      Size = integer()
 %% @end
 %%--------------------------------------------------------------------
-create(#ffs_tid{ inode = InodeTid, xattr = XattrTid, path_mfa = {M,F,A}} = Tid,
+create(#ffs_tid{ inode = InodeTid, xattr = XattrTid} = Tid,
        Parent, Name, Uid, Gid, Mode, Hash, Size) ->
 	NewInodeI = ets:update_counter(?COUNTER_TABLE,Tid#ffs_tid.name,1),
-	Path = get_path_to_inode(Tid,Parent) ++ Name,
 	Timestamp = now(),
 	
     NewInode = #ffs_inode{
@@ -128,33 +146,23 @@ create(#ffs_tid{ inode = InodeTid, xattr = XattrTid, path_mfa = {M,F,A}} = Tid,
       ctime = Timestamp,
       atime = Timestamp,
       mtime = Timestamp,
-      refcount = 0, 
-      ptr = ""
+      refcount = 0
      },
-	Ptr = (catch M:F(encrypt,Path,NewInode,A)),
-	NewInodeWPtr = NewInode#ffs_inode{ ptr = Ptr},
-	ets:insert(InodeTid,NewInodeWPtr),
+	ets:insert(InodeTid,NewInode),
 	ln(Tid,Parent,NewInodeI,Name,hard),
 	ets:insert(XattrTid,#ffs_xattr{inode = NewInodeI}),
-	NewInodeWPtr.
-	
+	NewInode.
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Description
+%% 
 %%
 %% @spec
-%%   function(Args) -> ok | {error, Error}
+%%   lookup(Tid,InodeI) -> #ffs_inode{} | enoent
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
 %% @end
 %%--------------------------------------------------------------------
-lookup(Tid,BaseInode,Path) ->
-	Inode = find(Tid,BaseInode,Path),
-	if 
-		Inode =:= enoent ->
-			enoent;
-		true ->
-			lookup(Tid,Inode)
-	end.
 lookup(#ffs_tid{ inode = InodeTid },InodeI) -> 
 	case ets:lookup(InodeTid,InodeI) of
 		[] ->
@@ -168,11 +176,12 @@ lookup(#ffs_tid{ inode = InodeTid },InodeI) ->
 %% Description
 %%
 %% @spec
-%%   function(Args) -> ok | {error, Error}
+%%   find(Tid,InodeI,Path) -> integer() | enoent
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
+%%      Path = string()
 %% @end
 %%--------------------------------------------------------------------
-find(Tid,Path) ->
-	find(Tid,1,Path).
 find(Tid,_Inode,[$/|Path]) ->
 	find(Tid,1,Path);
 find(Tid,Inode,Path) when is_integer(hd(Path)) ->
@@ -190,30 +199,29 @@ find(_Tid, Inode, []) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Description
+%% 
 %%
 %% @spec
-%%   function(Args) -> ok | {error, Error}
+%%   list(Tid,InodeI) -> [#ffs_link{}] | []
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
 %% @end
 %%--------------------------------------------------------------------
-list(Tid,BaseInode,Path) ->
-	Inode = find(Tid,BaseInode,Path),
-	if 
-		Inode =:= enoent ->
-			enoent;
-		true ->
-			list(Tid,Inode)
-	end.
-list(#ffs_tid{ link = LinkTid },Inode) -> 
-	Links = ets:lookup(LinkTid,Inode),
-	[#ffs_link{ to = Inode, from = Inode, name = ".", type = hard} | Links].
+list(#ffs_tid{ link = LinkTid },InodeI) -> 
+	Links = ets:lookup(LinkTid,InodeI),
+	[#ffs_link{ to = InodeI, from = InodeI, name = ".", type = hard} | Links].
 
 %%--------------------------------------------------------------------
 %% @doc
 %% Description
 %%
 %% @spec
-%%   function(Args) -> ok | {error, Error}
+%%   ln(Tid,From,To,Name,Type) -> #ffs_link{}
+%%      Tid = ffs_tid()
+%%      From = inodei()
+%%      To = inodei()
+%%      Name = string()
+%%      Type = soft | hard
 %% @end
 %%--------------------------------------------------------------------
 ln(#ffs_tid{ inode = InodeTid, link = LinkTid},
@@ -233,10 +241,13 @@ ln(#ffs_tid{ inode = InodeTid, link = LinkTid},
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Description
+%% 
 %%
 %% @spec
-%%   function(Args) -> ok | {error, Error}
+%%   unlink(Tid,From,Path) -> ok | {error, Error}
+%%      Tid = ffs_tid()
+%%      From = inodei()
+%%      Path = string()
 %% @end
 %%--------------------------------------------------------------------
 unlink(Tid,From,Path) -> 
@@ -265,7 +276,11 @@ unlink(#ffs_tid{ link = LinkTid, inode = InodeTid } = Tid, From,Path,ToInodeI) -
 %% Description
 %%
 %% @spec
-%%   function(Args) -> ok | {error, Error}
+%%   rename(Tid,OldFrom,OldPath,NewPath) -> #ffs_link{} | enoent
+%%      Tid = ffs_tid()
+%%      OldFrom = inodei()
+%%      OldPath = string()
+%%      NewPath = string()
 %% @end
 %%--------------------------------------------------------------------
 rename(Tid, OldFrom, OldPath, NewPath) -> 
@@ -288,10 +303,64 @@ rename(#ffs_tid{ link = LinkTid },OldFrom,OldTo,OldName,NewFrom,NewName) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Description
+%% 
+%%	
+%% @spec
+%%   chmod(Tid, InodeI, NewMode) -> #ffs_inode{}
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
+%%      NewMode = integer()
+%% @end
+%%--------------------------------------------------------------------
+chmod(Tid, InodeI, NewMode) ->
+	Inode = lookup(Tid,InodeI),
+	NewInode = Inode#ffs_inode{ mode = NewMode },
+	ets:insert(Tid#ffs_tid.inode,NewInode),
+	NewInode.
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% 
 %%
 %% @spec
-%%   function(Args) -> ok | {error, Error}
+%%   chgrp(Tid, InodeI, NewGroup) -> #ffs_inode{}
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
+%%      NewGroup = integer()
+%% @end
+%%--------------------------------------------------------------------
+chgrp(Tid, InodeI, NewGroup) ->
+	Inode = lookup(Tid,InodeI),
+	NewInode = Inode#ffs_inode{ gid = NewGroup },
+	ets:insert(Tid#ffs_tid.inode,NewInode),
+	NewInode.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% 
+%%
+%% @spec
+%%   chown(Tid, InodeI, NewOwner) -> #ffs_inode{}
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
+%%      NewOwner = integer()
+%% @end
+%%--------------------------------------------------------------------
+chown(Tid, InodeI, NewOwner) ->
+	Inode = lookup(Tid,InodeI),
+	NewInode = Inode#ffs_inode{ uid = NewOwner },
+	ets:insert(Tid#ffs_tid.inode,NewInode),
+	NewInode.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% 
+%%
+%% @spec
+%%   access(Tid,InodeI) -> #ffs_inode{} | enoent
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
 %% @end
 %%--------------------------------------------------------------------
 access(#ffs_tid{ inode = InodeTid } = Tid, InodeI) -> 
@@ -307,10 +376,14 @@ access(#ffs_tid{ inode = InodeTid } = Tid, InodeI) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Description
+%% 
 %%
 %% @spec
-%%   function(Args) -> ok | {error, Error}
+%%   modify(Tid,InodeI,NewHash,NewSize) -> #ffs_inode{} | enoent
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
+%%      NewHash = integer()
+%%      NewSize = integer()
 %% @end
 %%--------------------------------------------------------------------
 modify(#ffs_tid{ inode = InodeTid } = Tid,
@@ -329,10 +402,14 @@ modify(#ffs_tid{ inode = InodeTid } = Tid,
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Description
+%% 
 %%
 %% @spec
-%%   function(Args) -> ok | {error, Error}
+%%   list_xattr(Tid,InodeI) -> [{Key,Value}] | [] | enoent
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
+%%      Key = term()
+%%      Value = term()
 %% @end
 %%--------------------------------------------------------------------
 list_xattr(#ffs_tid{},
@@ -340,22 +417,30 @@ list_xattr(#ffs_tid{},
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Description
+%% 
 %%
 %% @spec
-%%   function(Args) -> ok | {error, Error}
+%%   get_xattr(Tid,InodeI,Key) -> Value | enoent
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
+%%      Key = term()
+%%      Value = term()
 %% @end
 %%--------------------------------------------------------------------
 get_xattr(#ffs_tid{},
           _Inode,
-	  _Key) -> {error,invalid_inode}.
+	  _Key) -> enoent.
 
 %%--------------------------------------------------------------------
 %% @doc
 %% Description
 %%
 %% @spec
-%%   function(Args) -> ok | {error, Error}
+%%   set_xattr(Tid,InodeI,Key,Value) -> ok | enoent
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
+%%      Key = term()
+%%      Value = term()
 %% @end
 %%--------------------------------------------------------------------
 set_xattr(#ffs_tid{},
@@ -368,12 +453,15 @@ set_xattr(#ffs_tid{},
 %% Description
 %%
 %% @spec
-%%   function(Args) -> ok | {error, Error}
+%%   delete_xattr(Tid,InodeI,Key) -> ok | enoent
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
+%%      Key = term()
 %% @end
 %%--------------------------------------------------------------------
 delete_xattr(#ffs_tid{},
 	     _Inode,
-	     _Key) -> {error,invalid_inode}.
+	     _Key) -> enoent.
 
 
 %%====================================================================
