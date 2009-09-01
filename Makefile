@@ -44,8 +44,8 @@ clean_environment:
 	@rm -rf bin
 	@rm -f $(APP_VSNS:%=lib/%)
 
-docs:
-	$(ERL) -noshell -eval "edoc:application($(APPNAME), \".\", [])" -s init stop
+docs:all
+	$(ERL) $(foreach dir,$(DIRS:%/src=%/ebin),-pa $(dir) ) -noshell -eval "edoc:application($(APPNAME))" -s init stop
 
 check_environment: all erts-$(ERTS_VSN) $(APP_VSNS:%=lib/%) releases/$(REL_VSN)/start.boot releases/$(REL_VSN)/sys.config releases/start_erl.data bin pipes log patches
 
