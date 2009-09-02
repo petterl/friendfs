@@ -3,11 +3,11 @@
 %%% @doc
 %%%   Filesystem
 %%%
-%%% The brains of friendsfs. It manages all the different stores and
-%%% manages a FAT table of the filesystem. 
+%%% The brains of friendsfs. It manages a FAT table of the filesystem.
+%%% 
 %%%
 %%% @end
-%%% Created : 10 Aug 2009 by Petter Larsson <petterl@lysator.liu.se>
+%%% Created : 10 Aug 2009 by Petter Sandholdt <petter@sandholdt.se>
 %%%-------------------------------------------------------------------
 -module(ffs_filesystem).
 
@@ -18,7 +18,7 @@
 %% API
 -export([start_link/2]).
 
-%% Storage API
+%% Filesystem API
 -export([list/2,read/3, write/3, delete/2, make_dir/2, lookup/2, find/3,
 	 get_config/1,get_stats/1]).
 
@@ -29,14 +29,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {name, fat, stats, config, storages = []}).
-
--record(storage, {
-	  filelist = [],       % A list of files which exist in this store.
-	  storeinfo,
-          pid,                 % Pid of storage process
-          priority = 100       % Priority of storage
-         }).
+-record(state, {name, fat, stats, config}).
 
 %%%===================================================================
 %%% API
@@ -55,14 +48,14 @@ start_link(Name,Args) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% List all configured Storages
+%% List all files 
 %%
 %% @spec
 %% list(Name) -> [Storage]
 %% @end
 %%--------------------------------------------------------------------
 list(Name,INodeI) ->
-    gen_server:call(Name, {list,INodeI}).
+    gen_server:call(Name, {list, INodeI}).
 
 
 %%--------------------------------------------------------------------
@@ -201,88 +194,77 @@ init([State,_Args]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({list,InodeI}, _From, State) ->
-	Links = ffs_fat:list(State#state.fat,InodeI),
+handle_call({list, InodeI}, _From, State) ->
+	Links = ffs_fat:list(State#state.fat, InodeI),
 	List = lists:map(fun(#ffs_link{ name = Name, to = To }) ->
 					{Name,ffs_fat:lookup(State#state.fat,To)}
 		end,Links),
     {reply, List , State};
-handle_call({lookup,Inode},_From,State) ->
-    {reply, ffs_fat:lookup(State#state.fat,Inode),State};
-handle_call({find,ParentInodeI,Path},_From,State) ->
-    Ret = case ffs_fat:find(State#state.fat,ParentInodeI,Path) of
-	      enoent ->
-		  enoent;
-	      Inode ->
-		  ffs_fat:lookup(State#state.fat,Inode)
-	  end,
+handle_call({lookup, Inode}, _From, State) ->
+    {reply, ffs_fat:lookup(State#state.fat, Inode), State};
+handle_call({find, ParentInodeI, Path}, _From, State) ->
+    Ret = case ffs_fat:find(State#state.fat, ParentInodeI, Path) of
+              enoent -> enoent;
+              Inode -> ffs_fat:lookup(State#state.fat, Inode)
+          end,
     {reply, Ret, State};
-handle_call(get_config,_From, State) ->
-    {reply,State#state.config,State};
-handle_call(get_stats,_From, State) ->
-    {reply,State#state.stats,State};
-
-
-
-
-
-
-
-
-
+handle_call(get_config, _From, State) ->
+    {reply,State#state.config, State};
+handle_call(get_stats, _From, State) ->
+    {reply,State#state.stats, State};
 
 
 %% Old code
-handle_call({read_node_info,Path}, _From, #state{ fat = TabName} = State) ->
-    case read_node_info_ets(TabName,Path) of
-	enoent ->
-	    {reply,{error,enoent},State};
-	Inode ->
-	    {reply,hd(ets:lookup(TabName,Inode)),State}
-    end;
-handle_call({read, Path, Offset}, From, State) ->
-    Storage = choose_storage(Path, State#state.storages),
-	if 
-		Storage == enoent ->
-			{reply,enoent,State};
-		true ->
-    		Pid = Storage#storage.pid,
-		EncPath = encrypt_path(Path,file),
-    		gen_server:cast(Pid, {read, From, EncPath, Offset}),
-    		{noreply, State}
-	end;
-handle_call({write, Path, Data}, From, State) ->
-    Storage = hd(State#state.storages),
-    Pid = Storage#storage.pid,
-    EncPath = encrypt_path(Path,file),
-    gen_server:cast(Pid,{write, From, EncPath, Data}),
-    NewStorage = Storage#storage{
-		   filelist = lists:usort([Path|Storage#storage.filelist])},
-    {noreply, State#state{ storages = lists:keyreplace(Pid,#storage.pid,State#state.storages,NewStorage)}};
-handle_call({make_dir, Path}, _From, State) ->
-    Storage = hd(State#state.storages),
-    Pid = Storage#storage.pid,
-    EncPath = encrypt_path(Path,dir),
-    case gen_server:call(Pid,{write, EncPath, <<"">>}) of
-	ok ->
-	    make_dir_ets(State#state.fat,Path,Storage),
-	    {reply,ok,State};
-	{error,Reason} ->
-	    {reply,{error,Reason},State}
-    end;
-handle_call({delete, Path}, _From, State) ->
-    New = lists:map(
-	    fun(#storage{pid = Pid, filelist = FL} = S) ->
-		    case lists:member(Path,FL) of
-			true ->
-			    EncPath = encrypt_path(Path,file),
-			    gen_server:call(Pid,{delete,EncPath}),
-			    S#storage{ filelist = S#storage.filelist -- [Path]};
-			false ->
-			    S
-		    end
-	    end,State#state.storages),
-    {reply, ok, State#state{storages = New}};
+%% handle_call({read_node_info,Path}, _From, #state{ fat = TabName} = State) ->
+%%     case read_node_info_ets(TabName,Path) of
+%% 	enoent ->
+%% 	    {reply,{error,enoent},State};
+%% 	Inode ->
+%% 	    {reply,hd(ets:lookup(TabName,Inode)),State}
+%%     end;
+%% handle_call({read, Path, Offset}, From, State) ->
+%%     Storage = choose_storage(Path, State#state.storages),
+%% 	if 
+%% 		Storage == enoent ->
+%% 			{reply,enoent,State};
+%% 		true ->
+%%     		Pid = Storage#storage.pid,
+%% 		EncPath = encrypt_path(Path,file),
+%%     		gen_server:cast(Pid, {read, From, EncPath, Offset}),
+%%     		{noreply, State}
+%% 	end;
+%% handle_call({write, Path, Data}, From, State) ->
+%%     Storage = hd(State#state.storages),
+%%     Pid = Storage#storage.pid,
+%%     EncPath = encrypt_path(Path,file),
+%%     gen_server:cast(Pid,{write, From, EncPath, Data}),
+%%     NewStorage = Storage#storage{
+%% 		   filelist = lists:usort([Path|Storage#storage.filelist])},
+%%     {noreply, State#state{ storages = lists:keyreplace(Pid,#storage.pid,State#state.storages,NewStorage)}};
+%% handle_call({make_dir, Path}, _From, State) ->
+%%     Storage = hd(State#state.storages),
+%%     Pid = Storage#storage.pid,
+%%     EncPath = encrypt_path(Path,dir),
+%%     case gen_server:call(Pid,{write, EncPath, <<"">>}) of
+%% 	ok ->
+%% 	    make_dir_ets(State#state.fat,Path,Storage),
+%% 	    {reply,ok,State};
+%% 	{error,Reason} ->
+%% 	    {reply,{error,Reason},State}
+%%     end;
+%% handle_call({delete, Path}, _From, State) ->
+%%     New = lists:map(
+%% 	    fun(#storage{pid = Pid, filelist = FL} = S) ->
+%% 		    case lists:member(Path,FL) of
+%% 			true ->
+%% 			    EncPath = encrypt_path(Path,file),
+%% 			    gen_server:call(Pid,{delete,EncPath}),
+%% 			    S#storage{ filelist = S#storage.filelist -- [Path]};
+%% 			false ->
+%% 			    S
+%% 		    end
+%% 	    end,State#state.storages),
+%%     {reply, ok, State#state{storages = New}};
 handle_call(_Request, _From, State) ->
 	
     Reply = ok,
@@ -298,14 +280,9 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({connect, Pid, Storeinfo, FileList}, State) ->
-    error_logger:info_report(
-      io_lib:format("A new storage has been connected with ~p",[State#state.name])),
-    DecrFileList = [decrypt_path(S) || S <- FileList],
-%    update_ets(DecrFileList,Storeinfo, State#state.table),
-    NewStore = #storage{ pid = Pid , storeinfo = Storeinfo },
-    link(Pid),
-    {noreply, State#state{ storages = [NewStore|State#state.storages]}}.
+handle_cast(_Msg, State) ->
+    io:format("~p: Unknown handle_cast(~p,~p) call\n",[?MODULE,_Msg,State]),
+    {noreply, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -350,54 +327,54 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%==================================================================
 
-choose_storage(Path, [#storage{ filelist = FileList} = Storage| Rest]) ->
-	case lists:member(Path, FileList) of
-		true ->
-			Storage;
-		false ->
-			choose_storage(Path,Rest)
-	end;
-choose_storage(_Path, []) ->
-	enoent.
+%% choose_storage(Path, [#storage{ filelist = FileList} = Storage| Rest]) ->
+%% 	case lists:member(Path, FileList) of
+%% 		true ->
+%% 			Storage;
+%% 		false ->
+%% 			choose_storage(Path,Rest)
+%% 	end;
+%% choose_storage(_Path, []) ->
+%% 	enoent.
 
 
-read_node_info_ets(TabName,Path) ->
-    Dir = filename:dirname(Path),
-    Name = filename:basename(Path),
-    find_inode(TabName,Dir,Name).
+%% read_node_info_ets(TabName,Path) ->
+%%     Dir = filename:dirname(Path),
+%%     Name = filename:basename(Path),
+%%     find_inode(TabName,Dir,Name).
 
-make_dir_ets(TabName,NewDirPath,Storage) ->
-    NewName = filename:basename(NewDirPath),
-    ParentPath = filename:dirname(NewDirPath),
-    ParentName = filename:basename(ParentPath),
-    Path = filename:dirname(ParentPath),
-    case find_inode(TabName,Path,ParentName) of
-	enoent ->
-	    enoent;
-	ParentInode ->
-	    ffs_fat:make_dir(TabName,ParentInode,NewName,default,default,default)
-    end.
+%% make_dir_ets(TabName,NewDirPath,Storage) ->
+%%     NewName = filename:basename(NewDirPath),
+%%     ParentPath = filename:dirname(NewDirPath),
+%%     ParentName = filename:basename(ParentPath),
+%%     Path = filename:dirname(ParentPath),
+%%     case find_inode(TabName,Path,ParentName) of
+%% 	enoent ->
+%% 	    enoent;
+%% 	ParentInode ->
+%% 	    ffs_fat:make_dir(TabName,ParentInode,NewName,default,default,default)
+%%     end.
 
-create_file_ets(TabName,NewFilePath,Hash,Storage) ->
-    ok.
+%% create_file_ets(TabName,NewFilePath,Hash,Storage) ->
+%%     ok.
 	
-find_inode(TabName,Path,Name) ->
-  ffs_fat:find(TabName,Path).
+%% find_inode(TabName,Path,Name) ->
+%%   ffs_fat:find(TabName,Path).
 
 
-encrypt_path(String,file) ->
-    re:replace(String,"/","-",[global,{return,list}])++"?file.ffs";
-encrypt_path(String,dir) ->
-    re:replace(String,"/","-",[global,{return,list}])++"?dir.ffs".
+%% encrypt_path(String,file) ->
+%%     re:replace(String,"/","-",[global,{return,list}])++"?file.ffs";
+%% encrypt_path(String,dir) ->
+%%     re:replace(String,"/","-",[global,{return,list}])++"?dir.ffs".
 
-decrypt_path(String) ->
-    Stripped = lists:reverse(filename:rootname(String)),
-    case re:split(Stripped,"[?]",[{return,list}]) of
-	["rid",Path] ->
-	    {dir,re:replace(lists:reverse(Path),"-","/",[global,{return,list}])};
-	["elif",Path] ->
-	    {file,re:replace(lists:reverse(Path),"-","/",[global,{return,list}])}
-    end.
+%% decrypt_path(String) ->
+%%     Stripped = lists:reverse(filename:rootname(String)),
+%%     case re:split(Stripped,"[?]",[{return,list}]) of
+%% 	["rid",Path] ->
+%% 	    {dir,re:replace(lists:reverse(Path),"-","/",[global,{return,list}])};
+%% 	["elif",Path] ->
+%% 	    {file,re:replace(lists:reverse(Path),"-","/",[global,{return,list}])}
+%%     end.
 
 
 %% insert_dir(TabName,root,Path,Name,Store) ->
