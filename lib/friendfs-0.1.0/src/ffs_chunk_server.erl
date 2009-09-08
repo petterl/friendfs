@@ -18,7 +18,7 @@
 
 %% Storage API
 -export([read/1, write/2]).
--export([register_storage/3]).
+-export([register_storage/3, update_storage/3]).
 
 
 %% gen_server callbacks
@@ -90,6 +90,9 @@ write(Cid, Data) ->
 register_storage(FromPid, Url, Chunks) ->
     gen_server:cast(?SERVER, {register_storage, FromPid, Url, Chunks}).
 
+update_storage(FromPid, Added, Removed) ->
+    gen_server:cast(?SERVER, {update_storage, FromPid, Added, Removed}).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -160,6 +163,12 @@ handle_cast({register_storage, From, Url, Chunks}, State) ->
     Storages = [#storage{url = Url, pid = From} | State#state.storages],
     Chunks2 = add_pid_to_chunks(State#state.chunks, Chunks, From),
     {noreply, State#state{storages = Storages, chunks = Chunks2}};
+handle_cast({update_storage, From, Added, Removed}, State) ->
+    %io:format("Changed Files: ~nAdded~n~p~nRemoved~n~p~n", [Added, Removed]),
+    Chunks  = remove_pid_from_chunks(State#state.chunks, Removed, From),
+    Chunks2 = add_pid_to_chunks(Chunks, Added, From),
+    {noreply, State#state{chunks = Chunks2}};
+
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -173,6 +182,18 @@ add_pid_to_chunks([CRec | R], NewChunkList, Pid) ->
             false -> {CRec, NewChunkList}
         end,
     [UpdatedChunk | add_pid_to_chunks(R, NewChunkList2, Pid)].
+
+remove_pid_from_chunks([], _Chunks, _Pid) ->
+    [];
+remove_pid_from_chunks([CRec | R], DelChunkList, Pid) ->
+    {UpdatedChunk, DelChunkList2} =
+        case lists:member(CRec#chunk.id, DelChunkList) of
+            true -> {CRec#chunk{storages = lists:subtract([Pid], CRec#chunk.storages)},
+                     lists:delete(CRec#chunk.id, DelChunkList)};
+            false -> {CRec, DelChunkList}
+        end,
+    [UpdatedChunk | remove_pid_from_chunks(R, DelChunkList2, Pid)].
+
 
 %%--------------------------------------------------------------------
 %% @private
