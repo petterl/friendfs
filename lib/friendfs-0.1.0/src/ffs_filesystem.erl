@@ -4,7 +4,7 @@
 %%%   Filesystem
 %%%
 %%% The brains of friendsfs. It manages a FAT table of the filesystem.
-%%% 
+%%%
 %%%
 %%% @end
 %%% Created : 10 Aug 2009 by Petter Sandholdt <petter@sandholdt.se>
@@ -48,7 +48,7 @@ start_link(Name,Args) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% List all files 
+%% List all files
 %%
 %% @spec
 %% list(Name) -> [Storage]
@@ -170,7 +170,7 @@ init([State,_Args]) ->
 	Stats = [{total_mem,0},
 			 {free_mem,0},
     		 {free_inodes,1 bsl 32 - 1}],
-	
+
 	Config = [{block_size,512},
     		  {inode_limit,1 bsl 32},
     		  {filesystem_id,1},
@@ -224,7 +224,7 @@ handle_call(get_stats, _From, State) ->
 %%     end;
 %% handle_call({read, Path, Offset}, From, State) ->
 %%     Storage = choose_storage(Path, State#state.storages),
-%% 	if 
+%% 	if
 %% 		Storage == enoent ->
 %% 			{reply,enoent,State};
 %% 		true ->
@@ -266,7 +266,7 @@ handle_call(get_stats, _From, State) ->
 %% 	    end,State#state.storages),
 %%     {reply, ok, State#state{storages = New}};
 handle_call(_Request, _From, State) ->
-	
+
     Reply = ok,
     {reply, Reply, State}.
 
@@ -357,7 +357,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% create_file_ets(TabName,NewFilePath,Hash,Storage) ->
 %%     ok.
-	
+
 %% find_inode(TabName,Path,Name) ->
 %%   ffs_fat:find(TabName,Path).
 
@@ -386,14 +386,14 @@ code_change(_OldVsn, State, _Extra) ->
 
 %%     Data = Node#ffs_node.data,
 %%     NewChildren = [Inode|Data#ffs_dir.children],
-    
+
 %%     NewNode = Node#ffs_node{ data = Data#ffs_dir{ children = NewChildren }},
-    
+
 %%     insert_dir(TabName,Inode,Parent,Path,Name,[],Store),
 %%     update_node(TabName,NewNode),
 %%     Inode.
 
-    
+
 %% insert_dir(TabName,Inode,Parent,Path,Name,Children,Store) ->
 %%     ets:insert(TabName,#ffs_node{ inode = Inode,
 %% 				  path = Path,
@@ -404,7 +404,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% update_node(TabName,Node) ->
 %%     ets:insert(TabName,Node).
-    
+
 
 %% update_ets(Data,Store,TabName) ->
 %%     insert_dirs(Data,Store,TabName),
@@ -439,7 +439,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%     end;
 %% find_node(_TabName,_Name,[]) ->
 %%     node_not_found.
-	    
+
 
 
 %% insert_dirs([{dir,Path}|T],Store,TabName) ->
@@ -453,5 +453,5 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% insert_files(_,_Store,_TabName) ->
 %%     ok.
-    
-    
+
+
