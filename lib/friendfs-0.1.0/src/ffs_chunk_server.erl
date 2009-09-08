@@ -34,6 +34,7 @@
 -record(storage, {
           url,            % storage URL
           pid,            % Pid of storage process
+          ref,            % Monitor Reference
           priority = 100  % Priority of storage
          }).
 
@@ -109,6 +110,7 @@ update_storage(FromPid, Added, Removed) ->
 %% @end
 %%--------------------------------------------------------------------
 init(_Config) ->
+    process_flag(trap_exit, true),
     {ok, #state{}}.
 
 %%--------------------------------------------------------------------
@@ -160,7 +162,8 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast({register_storage, From, Url, Chunks}, State) ->
-    Storages = [#storage{url = Url, pid = From} | State#state.storages],
+    Ref = erlang:monitor(process, From),
+    Storages = [#storage{url = Url, pid = From, ref = Ref} | State#state.storages],
     Chunks2 = add_pid_to_chunks(State#state.chunks, Chunks, From),
     {noreply, State#state{storages = Storages, chunks = Chunks2}};
 handle_cast({update_storage, From, Added, Removed}, State) ->
@@ -171,28 +174,6 @@ handle_cast({update_storage, From, Added, Removed}, State) ->
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
-
-add_pid_to_chunks([], Chunks, Pid) ->
-    lists:map(fun(Cid) -> #chunk{id=Cid, storages = [Pid]} end, Chunks);
-add_pid_to_chunks([CRec | R], NewChunkList, Pid) ->
-    {UpdatedChunk, NewChunkList2} =
-        case lists:member(CRec#chunk.id, NewChunkList) of
-            true -> {CRec#chunk{storages = [Pid | CRec#chunk.storages]},
-                     lists:delete(CRec#chunk.id, NewChunkList)};
-            false -> {CRec, NewChunkList}
-        end,
-    [UpdatedChunk | add_pid_to_chunks(R, NewChunkList2, Pid)].
-
-remove_pid_from_chunks([], _Chunks, _Pid) ->
-    [];
-remove_pid_from_chunks([CRec | R], DelChunkList, Pid) ->
-    {UpdatedChunk, DelChunkList2} =
-        case lists:member(CRec#chunk.id, DelChunkList) of
-            true -> {CRec#chunk{storages = lists:subtract([Pid], CRec#chunk.storages)},
-                     lists:delete(CRec#chunk.id, DelChunkList)};
-            false -> {CRec, DelChunkList}
-        end,
-    [UpdatedChunk | remove_pid_from_chunks(R, DelChunkList2, Pid)].
 
 
 %%--------------------------------------------------------------------
@@ -205,7 +186,13 @@ remove_pid_from_chunks([CRec | R], DelChunkList, Pid) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_info({'DOWN', Ref, process, Pid, Reason}, State) ->
+    io:format("DOWN ~p~n", [Pid]),
+    Storages = lists:keydelete(Pid, #storage.pid, State#state.storages),
+    Chunks = remove_pid_from_chunks(State#state.chunks, State#state.chunks, Pid),
+    {noreply, State#state{storages = Storages, chunks = Chunks}};
 handle_info(_Info, State) ->
+    io:format("Info ~p~n", [_Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -236,6 +223,29 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%==================================================================
+add_pid_to_chunks([], Chunks, Pid) ->
+    lists:map(fun(Cid) -> #chunk{id=Cid, storages = [Pid]} end, Chunks);
+add_pid_to_chunks([CRec | R], NewChunkList, Pid) ->
+    {UpdatedChunk, NewChunkList2} =
+        case lists:member(CRec#chunk.id, NewChunkList) of
+            true -> {CRec#chunk{storages = [Pid | CRec#chunk.storages]},
+                     lists:delete(CRec#chunk.id, NewChunkList)};
+            false -> {CRec, NewChunkList}
+        end,
+    [UpdatedChunk | add_pid_to_chunks(R, NewChunkList2, Pid)].
+
+remove_pid_from_chunks([], _Chunks, _Pid) ->
+    [];
+remove_pid_from_chunks([CRec | R], DelChunkList, Pid) ->
+    {UpdatedChunk, DelChunkList2} =
+        case lists:member(CRec#chunk.id, DelChunkList) of
+            true -> {CRec#chunk{storages = lists:subtract([Pid], CRec#chunk.storages)},
+                     lists:delete(CRec#chunk.id, DelChunkList)};
+            false -> {CRec, DelChunkList}
+        end,
+    [UpdatedChunk | remove_pid_from_chunks(R, DelChunkList2, Pid)].
+
+
 find_module(Url) ->
     {Scheme, _Rest} = friendfs_lib:urlsplit_scheme(Url),
     find_module_by_scheme(Scheme).
