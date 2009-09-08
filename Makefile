@@ -42,7 +42,7 @@ clean_environment:
 	@rm -rf pipes
 	@rm -rf logs
 	@rm -rf bin
-	@rm -f $(APP_VSNS:%=lib/%)
+	-@rm -f $(APP_VSNS:%=lib/%)
 
 docs:all
 	$(ERL) $(foreach dir,$(DIRS:%/src=%/ebin),-pa $(dir) ) -noshell -eval "edoc:application($(APPNAME))" -s init stop
