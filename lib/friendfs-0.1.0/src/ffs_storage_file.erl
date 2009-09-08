@@ -17,14 +17,15 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--define(SERVER, ?MODULE). 
+-define(SERVER, ?MODULE).
 
 -record(state,
-	{path   % Path of files
+	{path,        % Path of files
+     chunks = []  % Chunks in storage
 	}).
 
-start_link(FSName,Url) ->
-	gen_server:start_link(?MODULE,[FSName,Url],[]).
+start_link(Url, Config) ->
+	gen_server:start_link(?MODULE,[Url, Config],[]).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -41,15 +42,15 @@ start_link(FSName,Url) ->
 %%                    {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([FSName,Url]) ->
+init([Url, _Config]) ->
     {_Scheme, _Host, Path, _Query, _Fragment} =
         ffs_lib:split_url(Url),
     case file:list_dir(Path) of
         {ok, List} ->
-	    gen_server:cast(FSName,{connect,self(),Url,List}),
-	    {ok, #state{path=Path}};
+            ffs_chunk_server:register_storage(self(), Url, List),
+    	    {ok, #state{path=Path, chunks=List}};
         _ ->
-	    {stop, path_missing_in_config}
+	        {stop, path_missing_in_config}
     end.
 
 %%--------------------------------------------------------------------
@@ -87,7 +88,7 @@ handle_call({write, Path, Data}, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({read, From, Path, Offset}, State) ->
+handle_cast({read, From, Path, _Offset}, State) ->
     Data = file:read_file(join(State#state.path, Path)),
     gen_server:reply(From,Data),
     {noreply, State}.

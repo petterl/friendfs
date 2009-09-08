@@ -17,6 +17,8 @@ lib/kernel-*
 lib/runtime_tools-*
 lib/sasl-*
 lib/stdlib-*
+lib/appmon-*
+lib/gs-*
 log
 releases
 *.html

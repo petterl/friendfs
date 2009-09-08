@@ -9,82 +9,54 @@
 %%% @end
 %%% Created : 10 Aug 2009 by Petter Sandholdt <petter@sandholdt.se>
 %%%-------------------------------------------------------------------
--module(ffs_storage_mgr).
- 
+-module(ffs_chunk_server).
+
 -behaviour(gen_server).
- 
+
 %% API
--export([start_link/0]).
- 
+-export([start_link/1]).
+
 %% Storage API
--export([list/0, connect/1, disconnect/1]).
 -export([read/1, write/2]).
- 
- 
+-export([register_storage/3]).
+
+
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
- 
+
 -define(SERVER, ?MODULE).
- 
--record(state, {storages = []}).
- 
+
+-record(state, {storages = [],  %% Registered storages
+                chunks = []     %% List of {Chunk, RequestedRatio}
+                }).
+
 -record(storage, {
           url,            % storage URL
           pid,            % Pid of storage process
-          priority = 100, % Priority of storage
-          cids = []       % Chunk IDs in storage
+          priority = 100  % Priority of storage
          }).
- 
+
+-record(chunk, {
+          id,           % Chunk ID
+          ratio = 1,    % Maximum Requested chunk ratio by fileservers
+          storages = [] % List of pids where chunk is stored
+        }).
+
 %%%===================================================================
 %%% API
 %%%===================================================================
- 
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
 %%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
+%% @spec start_link(Config) -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
- 
- 
-%%--------------------------------------------------------------------
-%% @doc
-%% List all configured Storages
-%%
-%% @spec
-%% list() -> [Storage]
-%% @end
-%%--------------------------------------------------------------------
-list() ->
-    gen_server:call(?SERVER, list).
- 
-%%--------------------------------------------------------------------
-%% @doc
-%% Connect a new storage
-%%
-%% @spec
-%% connect(StorageUrl) -> ok | {error, Error}
-%% @end
-%%--------------------------------------------------------------------
-connect(StorageUrl) ->
-    gen_server:call(?SERVER, {connect, StorageUrl}).
- 
-%%--------------------------------------------------------------------
-%% @doc
-%% List all chunks on a specificDisconnect a storage
-%%
-%% @spec
-%% disconnect(Storage) -> ok | {error, Error}
-%% @end
-%%--------------------------------------------------------------------
-disconnect(Storage) ->
-    gen_server:call(?SERVER, {disconnect, Storage}).
- 
- 
+start_link(Config) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [Config], []).
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Read a chunk from a storage
@@ -95,7 +67,7 @@ disconnect(Storage) ->
 %%--------------------------------------------------------------------
 read(Cid) ->
     gen_server:call(?SERVER, {read, Cid}).
- 
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Write a chunk to storages
@@ -106,12 +78,22 @@ read(Cid) ->
 %%--------------------------------------------------------------------
 write(Cid, Data) ->
     gen_server:call(?SERVER, {write, Cid, all, Data}).
- 
- 
+
+%%--------------------------------------------------------------------
+%% @doc
+%% List all configured Storages
+%%
+%% @spec
+%% register_storage(FromPid, Url, Chunks) -> ok
+%% @end
+%%--------------------------------------------------------------------
+register_storage(FromPid, Url, Chunks) ->
+    gen_server:cast(?SERVER, {register_storage, FromPid, Url, Chunks}).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
- 
+
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -123,9 +105,9 @@ write(Cid, Data) ->
 %% {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([]) ->
+init(_Config) ->
     {ok, #state{}}.
- 
+
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -140,37 +122,16 @@ init([]) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call(list, _From, State) ->
-    Reply = State#state.storages,
-    {reply, Reply, State};
-handle_call({connect, StorageUrl}, _From, State) ->
-    Module = find_module(StorageUrl),
-    case gen_server:start_link(Module, StorageUrl) of
-        {ok, Pid} ->
-            Reply = ok,
-            Storage = #storage{url = StorageUrl,
-                               pid = Pid},
-            State1 = State#state{storages = [Storage | State#state.storages]};
-        Error ->
-            Reply = Error,
-            State1 = State
-    end,
-    {reply, Reply, State1};
-handle_call({disconnect, StorageUrl}, _From, State) ->
-    Storage = find_storage(StorageUrl, State#state.storages),
-    Pid = Storage#storage.pid,
-    Reply = gen_server:cast(Pid, stop),
-    {reply, Reply, State};
 handle_call({read, ChunkId}, _From, State) ->
-    Storage = choose_storage(ChunkId, State#state.storages),
-    Pid = Storage#storage.pid,
-    Res = gen_server:call(Pid, {read, ChunkId}),
+    Storages = lists:keysearch(ChunkId, #chunk.storages, State#state.chunks),
+    StoragePid = choose_storage(ChunkId, Storages, State#state.storages),
+    Res = gen_server:call(StoragePid, {read, ChunkId}),
     {reply, Res, State};
 handle_call({write, Cid, _Ratio=all, Data}, _From, State) ->
     Res = lists:map(
-fun(#storage{pid = Pid}) ->
-gen_server:call(Pid, {write, Cid, Data}) end,
-State#state.storages),
+            fun(#storage{pid = Pid}) ->
+                    gen_server:call(Pid, {write, Cid, Data}) end,
+            State#state.storages),
     {reply, Res, State};
 handle_call({write, Cid, Ratio, Data}, _From, State) ->
     Storages = lists:sublist(State#state.storages, Ratio),
@@ -179,10 +140,12 @@ handle_call({write, Cid, Ratio, Data}, _From, State) ->
                     gen_server:call(Pid, {write, Cid, Data}) end,
             Storages),
     {reply, Res, State};
+handle_call(info, _From, State) ->
+    {reply, State, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
- 
+
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -193,9 +156,24 @@ handle_call(_Request, _From, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast({register_storage, From, Url, Chunks}, State) ->
+    Storages = [#storage{url = Url, pid = From} | State#state.storages],
+    Chunks2 = add_pid_to_chunks(State#state.chunks, Chunks, From),
+    {noreply, State#state{storages = Storages, chunks = Chunks2}};
 handle_cast(_Msg, State) ->
     {noreply, State}.
- 
+
+add_pid_to_chunks([], Chunks, Pid) ->
+    lists:map(fun(Cid) -> #chunk{id=Cid, storages = [Pid]} end, Chunks);
+add_pid_to_chunks([CRec | R], NewChunkList, Pid) ->
+    {UpdatedChunk, NewChunkList2} =
+        case lists:member(CRec#chunk.id, NewChunkList) of
+            true -> {CRec#chunk{storages = [Pid | CRec#chunk.storages]},
+                     lists:delete(CRec#chunk.id, NewChunkList)};
+            false -> {CRec, NewChunkList}
+        end,
+    [UpdatedChunk | add_pid_to_chunks(R, NewChunkList2, Pid)].
+
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -208,7 +186,7 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info(_Info, State) ->
     {noreply, State}.
- 
+
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -222,7 +200,7 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
     ok.
- 
+
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -233,27 +211,27 @@ terminate(_Reason, _State) ->
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
- 
+
 %%%===================================================================
 %%% Internal functions
 %%%==================================================================
 find_module(Url) ->
     {Scheme, _Rest} = friendfs_lib:urlsplit_scheme(Url),
     find_module_by_scheme(Scheme).
- 
+
 find_module_by_scheme(local) ->
     ffs_storage_file;
 find_module_by_scheme(ram) ->
     ffs_storage_mem;
 find_module_by_scheme(Type) ->
     throw({no_storage_module_availible, Type}).
- 
+
 find_storage(Url, []) ->
     throw({storage_module_missing, Url});
 find_storage(Url, [Storage = #storage{url = Url} | _]) ->
     Storage;
 find_storage(Url, [_ | R]) ->
     find_storage(Url, R).
- 
-choose_storage(_ChunkId, [Storage | _Rest]) ->
+
+choose_storage(_ChunkId, [Storage | _Rest], _StorageData) ->
     Storage.

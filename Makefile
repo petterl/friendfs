@@ -40,8 +40,9 @@ clean_environment:
 	@rm -rf releases
 	@rm -f .make.cache
 	@rm -rf pipes
-	@rm -rf logs
+	@rm -rf log
 	@rm -rf bin
+	@rm -rf patches
 	-@rm -f $(APP_VSNS:%=lib/%)
 
 docs:all
