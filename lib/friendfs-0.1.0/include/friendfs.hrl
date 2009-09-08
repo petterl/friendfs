@@ -48,6 +48,7 @@
 -define(A, ?U bor ?G bor ?O).
 
 -define(D,  2#1000000000).
+-define(F,  2#10000000000).
 
 -define(U_R,2#0100000000).
 -define(U_W,2#0010000000).
