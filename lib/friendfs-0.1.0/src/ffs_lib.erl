@@ -8,6 +8,7 @@
 
 
 -export([split_url/1,urlsplit_scheme/1,read_config/2,parse_config/1,scan_config_str/2]).
+-export([get_value/2]).
 -define(DELIMS,[$ ,$\n,$#,$>,$<,$\t]).
 
 split_url(Url) ->
@@ -208,4 +209,4 @@ new_store() ->
 put_value(Store,Key,Value) ->
     [{Key,Value}|Store].
 get_value(Store,Key) ->
-    proplists:get_value(Store,Key).
+    proplists:get_value(Key, Store).

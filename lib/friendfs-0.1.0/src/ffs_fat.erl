@@ -151,7 +151,7 @@ create(#ffs_tid{ inode = InodeTid, xattr = XattrTid} = Tid,
 	ets:insert(InodeTid,NewInode),
 	ln(Tid,Parent,NewInodeI,Name,hard),
 	ets:insert(XattrTid,#ffs_xattr{inode = NewInodeI}),
-	NewInode.
+	lookup(Tid,NewInodeI).
 
 %%--------------------------------------------------------------------
 %% @doc

@@ -24,35 +24,36 @@
 %% fuserlsrv filesystem callbacks
 -export([ access/5,
 	  create/7,
-	  flush/5,
-	  forget/5,
-	  fsync/6,
-	  fsyncdir/6,
+	  %flush/5,
+	  %forget/5,
+	  %fsync/6,
+	  %fsyncdir/6,
 	  getattr/4,
-	  getlk/6,
-	  getxattr/6,
-	  link/6,
-	  listxattr/5,
+	  %getlk/6,
+	  %getxattr/6,
+	  %link/6,
+	  %listxattr/5,
 	  lookup/5,
-	  mkdir/6,
-	  mknod/7,
+	  %mkdir/6,
+	  %mknod/7,
 	  open/5,
 %	  opendir/5,
-	  read/7,
+	  %read/7,
 	  readdir/7,
-	  readlink/4,
-	  release/5,
-	  releasedir/5,
-	  removexattr/5,
-	  rename/7,
-	  rmdir/5,
-	  setattr/7,
-	  setlk/7,
-	  setxattr/7,
+	  %readlink/4,
+	  %release/5,
+%	  releasedir/5,
+	  %removexattr/5,
+	  %rename/7,
+	  %rmdir/5,
+	  %setattr/7,
+	  %setlk/7,
+	  %setxattr/7,
 	  statfs/4,
-	  symlink/6,
-	  unlink/5,
-	  write/7]).
+	  %symlink/6,
+	  %unlink/5,
+	  write/7
+	]).
 
 -record(state,{ filesystem }).
 
@@ -102,8 +103,11 @@ access (_Ctx, _Inode, _Mask, _Cont, State) -> ?DBG("access called"),
 %% and the second argument of type create_async_reply ().
 %% @end
 
-create (_Ctx, _Parent, _Name, _Mode, _Fi, _Cont, _State) -> ?DBG("create called"),
-  erlang:throw (not_implemented).
+create (#fuse_ctx{ uid = Uid, gid = Gid} = _Ctx, ParentI, BinName, Mode, Fi, _Cont, State) -> 
+  ?DBG("create called"),
+	NewInode = ffs_filesystem:create(State#state.filesystem,ParentI,binary_to_list(BinName),Uid,Gid,Mode),
+	Param = inode_to_param(NewInode),
+  {#fuse_reply_create{fuse_entry_param = Param, fuse_file_info = Fi},State}.
 
 %% @spec flush (Ctx::#fuse_ctx{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { flush_async_reply (), NewState } | { noreply, NewState } 
 %%  flush_async_reply () = #fuse_reply_err{}
@@ -249,14 +253,10 @@ lookup (_Ctx, ParentInodeI, BinName, _Cont, State) ->
     case ffs_filesystem:find(State#state.filesystem,ParentInodeI,Name) of
 	enoent ->
 	    {#fuse_reply_err{ err = enoent },State};
-	#ffs_inode{ inode = InodeI } = Inode ->
+	Inode ->
 	    {#fuse_reply_entry
 	     { fuse_entry_param =
-	       #fuse_entry_param{ ino = InodeI,
-				  generation = element(3,now()),
-				  attr = stat(Inode),
-				  attr_timeout_ms = 100,
-				  entry_timeout_ms = 100} },
+	       inode_to_param(Inode) },
 	     State}
     end.
     
@@ -611,17 +611,24 @@ code_change(_OldVsn, State, _Extra) ->
 %%%==================================================================
 
 parse_options(String) ->
-    Tokens = string:tokens(String,",="),
+    Tokens = string:tokens(String,","),
     parse_options(Tokens,"",[]).
-parse_options(["fs",Filesystem|T],MountAcc,FfsAcc) ->
+parse_options(["fs="++Filesystem|T],MountAcc,FfsAcc) ->
     parse_options(T,MountAcc,[{"fs",Filesystem}|FfsAcc]);
-parse_options([Key,Val|T],MountAcc,FfsAcc) ->
-    parse_options(T,Key++Val++MountAcc,FfsAcc);
+parse_options([Key|T],MountAcc,FfsAcc) ->
+    parse_options(T,Key++MountAcc,FfsAcc);
 parse_options([],MountAcc,FfsAcc) ->
     {MountAcc,FfsAcc}.
 
 to_unix({Mega,Secs,_Micro}) ->
 	Mega*1000000+Secs.
+	
+inode_to_param(#ffs_inode{inode = InodeI} = Inode) ->
+	#fuse_entry_param{ ino = InodeI,
+			  generation = element(3,now()),
+			  attr = stat(Inode),
+			  attr_timeout_ms = 100,
+			  entry_timeout_ms = 100}.
 	
 stat(#ffs_inode{ inode = Inode, gid = Gid, uid = Uid,
 		 atime = Atime, mtime = Mtime,
@@ -631,16 +638,16 @@ stat(#ffs_inode{ inode = Inode, gid = Gid, uid = Uid,
 %      st_dev = { 0, 0 },                  % ID of device containing file 
       st_ino = Inode,                     % inode number 
       st_mode = to_fuse_mode(Mode),       % protection 
-      st_nlink = Links                   % number of hard links 
-%      st_uid = Uid,                       % user ID of owner 
-%      st_gid = Gid,                       % group ID of owner 
+      st_nlink = Links,                   % number of hard links 
+      st_uid = Uid,                       % user ID of owner 
+      st_gid = Gid,                       % group ID of owner 
 %      st_rdev = { 0, 0 },                 % device ID (if special file) 
-%      st_size = Size,                     % total size = 0, in bytes 
-%      st_blksize = 0,                     % blocksize for filesystem I/O 
-%      st_blocks = 0,                      % number of blocks allocated 
-%      st_atime = to_unix(Atime),          % time of last access 
-%      st_mtime = to_unix(Mtime),          % time of last modification 
-%      st_ctime = to_unix(Ctime)           % time of last status change
+      st_size = Size,                     % total size = 0, in bytes 
+      st_blksize = 0,                     % blocksize for filesystem I/O 
+      st_blocks = 0,                      % number of blocks allocated 
+      st_atime = to_unix(Atime),          % time of last access 
+      st_mtime = to_unix(Mtime),          % time of last modification 
+      st_ctime = to_unix(Ctime)           % time of last status change
      }.
 
 -define(MAP_BITS,[{?D,?S_IFDIR},
