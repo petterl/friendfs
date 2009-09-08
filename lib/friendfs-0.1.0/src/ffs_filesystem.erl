@@ -19,7 +19,7 @@
 -export([start_link/2]).
 
 %% Filesystem API
--export([list/2,read/3, write/3, delete/2, make_dir/2, lookup/2, find/3,
+-export([list/2,read/3, write/3, delete/3, make_dir/2, lookup/2, find/3,
 	 get_config/1,get_stats/1,create/6]).
 
 
@@ -88,8 +88,8 @@ write(Name, Path, Data) ->
 %%   write(Name, Parent, ) -> ok | {error, Error}	
 %% @end
 %%--------------------------------------------------------------------
-create(Name, ParentI,NodeName,Uid,Gid,Mode) ->
-    gen_server:call(Name, {create,ParentI,NodeName,Uid,Gid,Mode}).
+create(SrvName, ParentI,Name,Uid,Gid,Mode) ->
+    gen_server:call(SrvName, {create,ParentI,Name,Uid,Gid,Mode}).
 
 
 
@@ -101,8 +101,8 @@ create(Name, ParentI,NodeName,Uid,Gid,Mode) ->
 %%   delete(Name,Path) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-delete(Name, Path) ->
-    gen_server:call(Name, {delete, Path}).
+delete(SrvName, ParentI,Name) ->
+    gen_server:call(SrvName, {delete, ParentI, Name}).
 
 
 %%--------------------------------------------------------------------
@@ -227,6 +227,9 @@ handle_call(get_stats, _From, State) ->
 handle_call({create,ParentI,Name,Uid,Gid,Mode}, _From, State) ->
 	NewInode = ffs_fat:create(State#state.fat,ParentI,Name,Uid,Gid,Mode,0,0),
 	{reply,NewInode,State};
+handle_call({delete,ParentI,Name}, _From, State) ->
+	ffs_fat:unlink(State#state.fat,ParentI,Name),
+	{reply,ok,State};
 
 %% Old code
 %% handle_call({read_node_info,Path}, _From, #state{ fat = TabName} = State) ->

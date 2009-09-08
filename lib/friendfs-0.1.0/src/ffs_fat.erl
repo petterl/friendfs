@@ -135,14 +135,19 @@ create(#ffs_tid{ inode = InodeTid, xattr = XattrTid} = Tid,
        Parent, Name, Uid, Gid, Mode, Hash, Size) ->
 	NewInodeI = ets:update_counter(?COUNTER_TABLE,Tid#ffs_tid.name,1),
 	Timestamp = now(),
-	
+	if
+		?D band Mode =/= 0 ->
+			NewMode = Mode;
+		true ->
+			NewMode = Mode bor ?F
+	end,
     NewInode = #ffs_inode{
       inode = NewInodeI,
       hash = Hash,
       size = Size,
       uid = Uid,
       gid = Gid,
-      mode = Mode,
+      mode = NewMode,
       ctime = Timestamp,
       atime = Timestamp,
       mtime = Timestamp,
@@ -265,7 +270,9 @@ unlink(#ffs_tid{ link = LinkTid, inode = InodeTid } = Tid, From,Path,ToInodeI) -
 		#ffs_inode{ refcount = 1 } ->
 			ets:delete(InodeTid,ToInodeI);
  		#ffs_inode{ refcount = Cnt } ->
-			ets:insert(InodeTid,ToInode#ffs_inode{ refcount = Cnt - 1 })
+			ets:insert(InodeTid,ToInode#ffs_inode{ refcount = Cnt - 1 });
+		enoent ->
+			enoent
 	end,
 	ets:delete_object(LinkTid,#ffs_link{ from = From, 
 										 to = ToInode#ffs_inode.inode, 

@@ -105,7 +105,8 @@ access (_Ctx, _Inode, _Mask, _Cont, State) -> ?DBG("access called"),
 
 create (#fuse_ctx{ uid = Uid, gid = Gid} = _Ctx, ParentI, BinName, Mode, Fi, _Cont, State) -> 
   ?DBG("create called"),
-	NewInode = ffs_filesystem:create(State#state.filesystem,ParentI,binary_to_list(BinName),Uid,Gid,Mode),
+	NewInode = ffs_filesystem:create(State#state.filesystem,ParentI,binary_to_list(BinName),
+									 Uid,Gid,to_ffs_mode(Mode)),
 	Param = inode_to_param(NewInode),
   {#fuse_reply_create{fuse_entry_param = Param, fuse_file_info = Fi},State}.
 
@@ -625,7 +626,7 @@ to_unix({Mega,Secs,_Micro}) ->
 	
 inode_to_param(#ffs_inode{inode = InodeI} = Inode) ->
 	#fuse_entry_param{ ino = InodeI,
-			  generation = element(3,now()),
+			  generation = 1,%element(3,now()),
 			  attr = stat(Inode),
 			  attr_timeout_ms = 100,
 			  entry_timeout_ms = 100}.
@@ -651,6 +652,7 @@ stat(#ffs_inode{ inode = Inode, gid = Gid, uid = Uid,
      }.
 
 -define(MAP_BITS,[{?D,?S_IFDIR},
+				  {?F,?S_IFREG},
 				  {?U_R,?S_IRUSR},
 				  {?U_W,?S_IWUSR},
 				  {?U_X,?S_IXUSR},
@@ -660,6 +662,14 @@ stat(#ffs_inode{ inode = Inode, gid = Gid, uid = Uid,
 				  {?O_R,?S_IROTH},
 				  {?O_W,?S_IWOTH},
 				  {?O_X,?S_IXOTH}]).
+
+to_ffs_mode(Mode) ->
+	lists:foldl(fun({FfsBit,FuseBit},FuseMode) when (FuseBit band Mode) =/= 0 ->
+					FuseMode bor FfsBit;
+				   (_Else,FuseMode) ->
+					FuseMode
+				end,0,?MAP_BITS).
+	
 	
 to_fuse_mode(Mode) ->
 	lists:foldl(fun({FfsBit,FuseBit},FuseMode) when (FfsBit band Mode) =/= 0 ->
