@@ -4,19 +4,20 @@
 -endif.
 
 -record(ffs_inode,{
-	  inode,    %% int(): The inode number, unique per filesystem.
-	  hash,     %% int(): A hash of the contents of the node
-	  size,     %% int(): The size of the contents of this node
-	  uid,      %% int(): The user which owns this node.
-	  gid,      %% int(): The group which ownds this node.
-	  mode,     %% int(): The access mode of this node, here information if
-	            %% this is a directory or not can be found
-	            %% drwxrwxrwx, 11 bits
-	  ctime,    %% now(): When the node was created
-	  atime,    %% now(): When the node was last accessed
-	  mtime,    %% now(): When the node was last modified
-	  refcount, %% int(): How many links this node has to it
-	  ptr       %% str(): The name of this node on the remote side
+	  inode,              %% int(): The inode number, unique per filesystem.
+	  hash,               %% int(): A hash of the contents of the node
+	  size,               %% int(): The size of the contents of this node
+	  uid,                %% int(): The user which owns this node.
+	  gid,                %% int(): The group which ownds this node.
+	  mode,               %% int(): The access mode of this node, here information if
+	                      %% this is a directory or file can be found
+	                      %% fdrwxrwxrwx, 12 bits
+	  ctime,              %% now(): When the node was created
+	  atime,              %% now(): When the node was last accessed
+	  mtime,              %% now(): When the node was last modified
+	  refcount,           %% int(): How many links this node has to it
+	  chunkids = [],      %% [str()]: A list of all the chunkids of this inode
+	  write_cache         %% bin(): The current write cache
 	 }).
 
 -record(ffs_link,{
@@ -37,8 +38,7 @@
 	  inode,    %% Table ID of the inode ets table
 	  link,     %% Table ID of the link ets table
 	  xattr,    %% Table ID of the xattr ets table
-	  path_mfa  %% The {M,F,A} to call with [Action,String|A] where Action is
-	            %% encrypt or decrypt and String is a file or directory path.
+	  config    %% Configuration for the fat
 	 }).
 
 

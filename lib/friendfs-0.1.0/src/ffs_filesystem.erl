@@ -19,7 +19,7 @@
 -export([start_link/2]).
 
 %% Filesystem API
--export([list/2,read/3, write/3, delete/3, make_dir/2, lookup/2, find/3,
+-export([list/2,read/3, write/4, flush/2, delete/3, make_dir/2, lookup/2, find/3,
 	 get_config/1,get_stats/1,create/6]).
 
 
@@ -77,8 +77,19 @@ read(Name,Path, Offset) ->
 %%   write(Name, Path, Data) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-write(Name, Path, Data) ->
-    gen_server:call(Name, {write, Path, Data}).
+write(SrvName, InodeI, Data, Offset) ->
+    gen_server:call(SrvName, {write, InodeI, Data, Offset}).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Write a chunk to storages
+%%
+%% @spec
+%%   flush(Name, InodeI) -> ok | {error, Error}
+%% @end
+%%--------------------------------------------------------------------
+flush(SrvName, InodeI ) ->
+    gen_server:call(SrvName, {flush, InodeI}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -178,7 +189,6 @@ get_stats(Name) ->
 %%--------------------------------------------------------------------
 init([State,_Args]) ->
     process_flag(trap_exit,true),
-    Tid = ffs_fat:init(State#state.name),
 	Stats = [{total_mem,0},
 			 {free_mem,0},
     		 {free_inodes,1 bsl 32 - 1}],
@@ -186,8 +196,11 @@ init([State,_Args]) ->
 	Config = [{block_size,512},
     		  {inode_limit,1 bsl 32},
     		  {filesystem_id,1},
+    		  {chunk_size,1 bsl 15}, %% 32 kB
     		  {mnt_opts,0},
     		  {max_filename_size,36#sup}],
+
+    Tid = ffs_fat:init(State#state.name,ffs_lib:get_value(chunk_size,Config)),
 
     NewState = State#state{ fat = Tid, stats = Stats, config = Config },
     {ok, NewState}.
@@ -230,7 +243,23 @@ handle_call({create,ParentI,Name,Uid,Gid,Mode}, _From, State) ->
 handle_call({delete,ParentI,Name}, _From, State) ->
 	ffs_fat:unlink(State#state.fat,ParentI,Name),
 	{reply,ok,State};
-
+handle_call({write,InodeI,Data,Offset}, _From, State) ->
+	case ffs_fat:write_cache(State#state.fat,InodeI,Data,Offset) of
+		{chunk,ChunkId,ChunkData} ->
+			store_chunk(ChunkId,ChunkData,State#state.config);
+		_GetMore ->
+			ok
+	end,
+	{reply,ok,State};
+handle_call({flush,InodeI}, _From, State) ->
+	case ffs_fat:flush_cache(State#state.fat,InodeI) of
+		{chunk,ChunkId,ChunkData} ->
+			store_chunk(ChunkId,ChunkData,State#state.config);
+		_GetMore ->
+			ok
+	end,
+	{reply,ok,State};
+	
 %% Old code
 %% handle_call({read_node_info,Path}, _From, #state{ fat = TabName} = State) ->
 %%     case read_node_info_ets(TabName,Path) of
@@ -343,6 +372,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%==================================================================
+
+store_chunk(ChunkId,Data,Config) ->
+	io:format("Storing ~p\n",[ChunkId]),
+	ok.
 
 %% choose_storage(Path, [#storage{ filelist = FileList} = Storage| Rest]) ->
 %% 	case lists:member(Path, FileList) of

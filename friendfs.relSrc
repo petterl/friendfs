@@ -4,6 +4,7 @@
           {stdlib,""},
           {sasl,""},
           {runtime_tools,""},
+          {crypto,""},
           {fuserl,""},
           {gs,""},
           {appmon,""},

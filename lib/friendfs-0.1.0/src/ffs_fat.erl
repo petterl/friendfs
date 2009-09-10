@@ -9,7 +9,7 @@
 -module(ffs_fat).
 
 %% API
--export([init/1,
+-export([init/2,
 	 init_counters/0,
 	 make_dir/6,
 	 create/8,
@@ -27,7 +27,10 @@
 	 list_xattr/2,
 	 get_xattr/3,
 	 set_xattr/4,
-	 delete_xattr/3
+	 delete_xattr/3,
+	 write_cache/4,
+	 flush_cache/2,
+	 get_chunkid/1
 ]).
 
 -include_lib("friendfs/include/friendfs.hrl").
@@ -68,13 +71,14 @@
 %%     Name = atom()
 %% @end
 %%--------------------------------------------------------------------
-init(Name) ->
+init(Name,ChunkSize) ->
     ets:insert(?COUNTER_TABLE,{Name,0}),
     Tid = #ffs_tid{ 
       name = Name,
       inode = ets:new(Name,[{keypos,#ffs_inode.inode},set]),
       link = ets:new(Name,[{keypos,#ffs_link.from},bag]),
-      xattr = ets:new(Name,[{keypos,#ffs_xattr.inode},set])},
+      xattr = ets:new(Name,[{keypos,#ffs_xattr.inode},set]),
+      config = [{chunk_size,ChunkSize},{chunkid_mfa,{?MODULE,get_chunkid}}]},
     create(Tid,1,"..",0,0,?D bor ?A,0,0),
     Tid.
 
@@ -467,9 +471,79 @@ delete_xattr(#ffs_tid{}, _Inode, _Key) ->
     enoent.
 
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Description
+%%
+%% @spec
+%%   write_cache(Tid,InodeI,NewData,Offset) -> {chunk,ChunkId,Data} | more
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
+%%      NewData = binary()
+%%      Offset = integer()
+%%      ChunkId = string()
+%%      Data = binary()
+%% @end
+%%--------------------------------------------------------------------
+write_cache(Tid,InodeI,AppendData,Offset) ->
+	ChunkSize = ffs_lib:get_value(chunk_size,Tid#ffs_tid.config),
+	Inode = lookup(Tid,InodeI),
+	NewData = case Inode of
+				#ffs_inode{ write_cache = undefined } when (Offset rem ChunkSize) == 0 ->
+					AppendData;
+				#ffs_inode{ write_cache = OldData } when size(OldData) == (Offset rem ChunkSize) ->
+					<<OldData/binary,AppendData/binary>>
+			end,
+	NewInode = Inode#ffs_inode{ write_cache = NewData },
+	if 
+		size(NewData) >= ChunkSize ->
+			flush_cache(Tid,NewInode);
+		true ->
+			ets:insert(Tid#ffs_tid.inode,NewInode),
+			more
+	end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Description	
+%%
+%% @spec
+%%   write_cache(Tid,InodeI) -> {chunk,ChunkId,Data} | empty
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
+%% @end
+%%--------------------------------------------------------------------
+flush_cache(Tid,InodeI) when is_integer(InodeI) ->
+	flush_cache(Tid,lookup(Tid,InodeI));
+flush_cache(_Tid,#ffs_inode{ write_cache = undefined }) ->
+	empty;
+flush_cache(Tid,#ffs_inode{ inode = InodeI, write_cache = Data } = Inode) ->
+	{M,F} = ffs_lib:get_value(chunkid_mfa,Tid#ffs_tid.config),
+	ChunkId = M:F(Data),
+	NewInode = Inode#ffs_inode{ chunkids = [ChunkId|Inode#ffs_inode.chunkids],
+								write_cache = undefined },
+	ets:insert(Tid#ffs_tid.inode,NewInode),
+	{chunk,ChunkId,Data};
+flush_cache(_Tid,Else) ->
+	Else.
+
 %%====================================================================
 %% Internal functions
 %%====================================================================
+
+get_chunkid(Data) ->
+	get_chunkid(crypto:sha(Data),"").
+get_chunkid(<<Data/integer,Rest/binary>>,Acc) ->	
+	[Str] = io_lib:format("~.8B",[Data]),
+	RevStr = lists:reverse(pad(Str,"0",3)),
+	get_chunkid(Rest,RevStr ++ Acc);
+get_chunkid(<<>>,Acc) ->
+	lists:reverse(lists:flatten(Acc)).
+	
+pad(Str,Num,Length) when length(Str) >= Length ->
+	Str;
+pad(Str,Num,Length) ->
+	pad([hd(Num)|Str],Num,Length).
 
 get_path_to_inode(Tid,Inode) ->
     get_path_to_inode(Tid,Inode,"").

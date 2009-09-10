@@ -210,5 +210,7 @@ new_store() ->
     [].
 put_value(Store,Key,Value) ->
     [{Key,Value}|Store].
-get_value(Store,Key) ->
-    proplists:get_value(Key, Store).
+get_value(Store,Key) when is_list(Store) ->
+    proplists:get_value(Key, Store);
+get_value(Key,Store) ->
+	proplists:get_value(Key, Store).
