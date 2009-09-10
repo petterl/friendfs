@@ -32,6 +32,8 @@ test:
 clean: clean_beam clean_release clean_docs
 	rm -f .make.cache
 	rm -f erl_crash.dump
+	find . -name '*~' -exec rm {} \;
+	find . -name '*#' -exec rm {} \;
 
 clean_beam:
 	@for d in $(DIRS); do \
