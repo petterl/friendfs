@@ -44,8 +44,15 @@ start_link(Url, Config) ->
 %% @end
 %%--------------------------------------------------------------------
 init([Url, _Config]) ->
-    {_Scheme, _Host, Path, _Query, _Fragment} =
+    {_Scheme, Host, UrlPath, _Query, _Fragment} =
         ffs_lib:split_url(Url),
+	Path = case Host of
+		"" ->
+			UrlPath;
+		_Else ->
+			%% non absolute file path
+			Host++UrlPath
+	end,
     case file:list_dir(Path) of
         {ok, List} ->
             ffs_chunk_server:register_storage(self(), Url, List),
