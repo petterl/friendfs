@@ -1,11 +1,49 @@
-To setup and start developing to the following:
+PREREQ:
+The fuserl c driver has to be installed. You can find it here:
+http://fuserl.googlecode.com/files/fuserldrv-2.0.3.tar.gz
 
-make && make check_environment
+If you are have root just follow the instructions and instal it in the
+default location. If you are not root or want to install the c driver
+someplace else you need to update
+lib/fuserl-2.0.5/src/fuserl.appSrc. The thing you need to change is
+fuserldrvprefix from auto_detect to the path where you have the fuserl
+c driver installed:
+
+i.e. 
+
+{env,[{fuserldrvprefix,"/home/lukas/fuserlcdrv/"}]}
+
+INSTALL:
+Just doing a make should be enough to install the system
+
+make 
+
+STARTING FRIENDFS:
 
 You then can start and connect to the erlang VM using the command:
 
 scripts/friendfsctrl start
 
-scripts/friendfsctrl connect
+Right now the configuration file which is uses is
+lib/friendfs-0.1.0/doc/test.config. In it the directory ffs_data is
+used to as the point which the started file storage stores its data so
+inorder for the VM to not crash on startup you need to manually create
+the ffs_data directory.
+
+USING FRIENDFS:
+
+You wont have any fun without a mount point where you can put your
+files. You create a mountpoint by logging into the erlang VM and
+issuing the following command:
+
+(friendfs@seasc1615)1> ffs_mounpoint_sup:mount("/dir/to/mount/to","fs=home").
+
+
+remember that /dir/to/mount/to has to exist before you can mount you
+new friendfs filesystem into it!
+
+You connect to the erlang VM by issuing this command:
+
+scripts/friendfsctl connect
 
 If you have any question rtfs!

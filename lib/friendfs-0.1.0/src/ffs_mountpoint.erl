@@ -26,7 +26,7 @@
 	  create/7,
 	  flush/5,
 	  forget/5,
-	  fsync/6,
+%	  fsync/6,
 	  fsyncdir/6,
 	  getattr/4,
 	  getlk/6,
@@ -35,7 +35,7 @@
 	  listxattr/5,
 	  lookup/5,
 	  mkdir/6,
-	  mknod/7,
+%	  mknod/7,
 	  open/5,
 	  opendir/5,
 	  read/7,
@@ -51,7 +51,7 @@
 	  setxattr/7,
 	  statfs/4,
 	  symlink/6,
-	  unlink/5,
+%	  unlink/5,
 	  write/7
 	]).
 
@@ -103,14 +103,16 @@ access (_Ctx, _Inode, _Mask, _Cont, State) -> ?DBG("access called"),
 %% and the second argument of type create_async_reply ().
 %% @end
 
-create (#fuse_ctx{ uid = Uid, gid = Gid} = _Ctx, ParentI, BinName, Mode, Fi, _Cont, State) -> 
-  ?DBG("create called"),
-	NewInode = ffs_filesystem:create(State#state.filesystem,ParentI,binary_to_list(BinName),
-									 Uid,Gid,to_ffs_mode(Mode)),
-	Param = inode_to_param(NewInode),
-  {#fuse_reply_create{fuse_entry_param = Param, fuse_file_info = Fi},State}.
+create (#fuse_ctx{ uid = Uid, gid = Gid} = _Ctx, ParentI,
+	BinName, Mode, Fi, _Cont, State) -> 
+    ?DBG("create called"),
+    NewInode = ffs_filesystem:create(
+		 State#state.filesystem,ParentI,binary_to_list(BinName),
+		 Uid,Gid,to_ffs_mode(Mode)),
+    Param = inode_to_param(NewInode),
+    {#fuse_reply_create{fuse_entry_param = Param, fuse_file_info = Fi},State}.
 
-%% @spec flush (Ctx::#fuse_ctx{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { flush_async_reply (), NewState } | { noreply, NewState } 
+%% @spec flush (Ctx::#fuse_ct x{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { flush_async_reply (), NewState } | { noreply, NewState } 
 %%  flush_async_reply () = #fuse_reply_err{}
 %% @doc This is called on each close () of an opened file, possibly multiple
 %% times per {@link open/4. open} call (due to dup () et. al.).  
@@ -207,7 +209,7 @@ getlk (_Ctx, _Inode, _Fi, _Lock, _Cont, _State) -> ?DBG("getlk called"),
 
 getxattr (_Ctx, _Inode, _Name, _Size, _Cont, State) ->
     ?DBG("getxattr called"),
-    {#fuse_reply_err{ err = enoent },State}.
+    {#fuse_reply_xattr{ count = 0 },State}.
 
 %% @spec link (Ctx::#fuse_ctx{}, Ino::integer (), NewParent::integer (), NewName::binary (), Cont::continuation (), State) -> { link_async_reply (), NewState } | { noreply, NewState }
 %%  link_async_reply () = #fuse_reply_entry{} | #fuse_reply_err{}
@@ -418,8 +420,9 @@ removexattr (_Ctx, _Inode, _Name, _Cont, _State) -> ?DBG("removexattr called"),
 %% and the second argument of type rename_async_reply ().
 %% @end
 
-rename (_Ctx, _Parent, _Name, _NewParent, _NewName, _Cont, _State) -> ?DBG("rename called"),
-  erlang:throw (not_implemented).
+rename (_Ctx, _Parent, _Name, _NewParent, _NewName, _Cont, State) ->
+    ?DBG("rename called"),
+    {#fuse_reply_err{err = ok},State}.
 
 %% @spec rmdir (Ctx::#fuse_ctx{}, Inode::integer (), Name::binary (), Cont::continuation (), State) -> { rmdir_async_reply (), NewState } | { noreply, NewState }
 %%   rmdir_async_reply () = #fuse_reply_err{}

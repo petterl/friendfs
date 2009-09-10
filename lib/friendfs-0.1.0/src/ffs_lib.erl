@@ -34,6 +34,8 @@ urlsplit_netloc(Path) ->
 
 urlsplit_netloc(Rest=[C | _], Acc) when C =:= $/; C =:= $?; C =:= $# ->
     {lists:reverse(Acc), Rest};
+urlsplit_netloc([],Acc) ->
+    {lists:reverse(Acc), []};
 urlsplit_netloc([C | Rest], Acc) ->
     urlsplit_netloc(Rest, [C | Acc]).
 
