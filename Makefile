@@ -29,25 +29,30 @@ test:
 		(cd $$d; $(MAKE) test); \
 	done
 
-clean: clean_release
+clean: clean_beam clean_release clean_docs
 	rm -f .make.cache
+	rm -f erl_crash.dump
+
+clean_beam:
 	@for d in $(DIRS); do \
 		(cd $$d; $(MAKE) clean); \
 	done
 
 clean_release:
-	@rm -f erts-$(ERTS_VSN)
-	@rm -f releases/$(REL_VSN)/$(APPNAME).boot
-	@rm -f $(APPNAME).rel
-	@rm -f $(APPNAME).script
-	@rm -rf releases
-	@rm -rf pipes
-	@rm -rf log
-	@rm -rf bin
-	@rm -rf patches
-	-@rm -f $(APP_VSNS:%=lib/%)
+	rm -f erts-$(ERTS_VSN)
+	rm -f $(APPNAME).rel
+	rm -f $(APPNAME).script
+	rm -rf releases
+	rm -rf pipes
+	rm -rf log
+	rm -rf bin
+	rm -rf patches
+	-rm -f $(APP_VSNS:%=lib/%)
 
-docs:all
+clean_docs:
+	$(foreach d,$(DIRS),rm -f $d/../doc/*.html $d/../doc/edoc-info $d/../doc/stylesheet.html $d/../doc/erlang.png 2> /dev/null & )
+
+docs:subdirs
 	$(ERL) $(foreach dir,$(DIRS:%/src=%/ebin),-pa $(dir) ) -noshell -eval "edoc:application($(APPNAME))" -s init stop
 
 setup_release: erts-$(ERTS_VSN) $(APP_VSNS:%=lib/%) releases/$(REL_VSN) releases/$(REL_VSN)/start.boot releases/$(REL_VSN)/sys.config releases/start_erl.data bin pipes log patches
