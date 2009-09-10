@@ -1,6 +1,6 @@
 To setup and start developing to the following:
 
-make && make check_environment
+make check_environment
 
 You then can start and connect to the erlang VM using the command:
 
