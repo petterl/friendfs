@@ -50,7 +50,7 @@ clean_release:
 	-rm -f $(APP_VSNS:%=lib/%)
 
 clean_docs:
-	$(foreach d,$(DIRS),rm -f $d/../doc/*.html $d/../doc/edoc-info $d/../doc/stylesheet.html $d/../doc/erlang.png 2> /dev/null & )
+	$(foreach d,$(DIRS),rm -f $d/../doc/*.html $d/../doc/edoc-info $d/../doc/stylesheet.css $d/../doc/erlang.png 2> /dev/null & )
 
 docs:subdirs
 	$(ERL) $(foreach dir,$(DIRS:%/src=%/ebin),-pa $(dir) ) -noshell -eval "edoc:application($(APPNAME))" -s init stop
