@@ -127,8 +127,10 @@ create (#fuse_ctx{ uid = Uid, gid = Gid} = _Ctx, ParentI,
 %% and the second argument of type flush_async_reply ().
 %% @end
 
-flush (_Ctx, _Inode, _Fi, _Cont, State) -> ?DBG("flush called"),
-  {#fuse_reply_err{err = ok},State}.
+flush (_Ctx, InodeI, _Fi, _Cont, State) -> 
+    ?DBG("flush called"),
+	ffs_filesystem:flush(State#state.filesystem,InodeI),
+    {#fuse_reply_err{err = ok},State}.
 
 %% @spec forget (Ctx::#fuse_ctx{}, Inode::integer (), Nlookup::integer (), Cont::continuation (), State) -> { forget_async_reply (), NewState } | { noreply, NewState } 
 %%  forget_async_reply () = #fuse_reply_none{}
@@ -237,8 +239,8 @@ link (_Ctx, _Ino, _NewParent, _NewName, _Cont, _State) -> ?DBG("link called"),
 %% and the second argument of type listxattr_async_reply ().
 %% @end
 
-listxattr (_Ctx, _Ino, _Size, _Cont, _State) -> ?DBG("listxattr called"),
-  erlang:throw (not_implemented).
+listxattr (_Ctx, _Ino, _Size, _Cont, State) -> ?DBG("listxattr called"),
+  {#fuse_reply_xattr{ count = 0 },State}.
 
 %% @spec lookup (Ctx::#fuse_ctx{}, ParentInode::integer (), Name::binary (), Cont::continuation (), State) -> { lookup_async_reply (), NewState } | { noreply, NewState }
 %%  lookup_async_reply () = #fuse_reply_entry{} | #fuse_reply_err{}
@@ -549,8 +551,8 @@ symlink (_Ctx, _Link, _Inode, _Name, _Cont, _State) -> ?DBG("symlink called"),
 %% and the second argument of type write_async_reply ().
 %% @end
 
-write (_Ctx, _Inode, Data, _Offset, _Fi, _Cont, State) -> 
-  ?DBG("write called"),
+write (_Ctx, InodeI, Data, Offset, _Fi, _Cont, State) -> 
+  ffs_filesystem:write(State#state.filesystem,InodeI,Data,Offset),
   {#fuse_reply_write{ count = size(Data) },State}.
 
 %% @spec unlink (Ctx::#fuse_ctx{}, Inode::integer (), Name::binary (), Cont::continuation (), State) -> { unlink_async_reply (), NewState } | { noreply, NewState }

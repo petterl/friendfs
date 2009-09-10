@@ -245,10 +245,10 @@ handle_call({delete,ParentI,Name}, _From, State) ->
 	{reply,ok,State};
 handle_call({write,InodeI,Data,Offset}, _From, State) ->
 	case ffs_fat:write_cache(State#state.fat,InodeI,Data,Offset) of
-		{chunk,ChunkId,ChunkData} ->
-			store_chunk(ChunkId,ChunkData,State#state.config);
-		_GetMore ->
-			ok
+		[] ->
+			ok;
+ 		Chunks ->
+			[store_chunk(ChunkId,ChunkData,State#state.config) || {chunk,ChunkId,ChunkData} <- Chunks]
 	end,
 	{reply,ok,State};
 handle_call({flush,InodeI}, _From, State) ->
@@ -373,8 +373,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%==================================================================
 
-store_chunk(ChunkId,Data,Config) ->
+store_chunk(ChunkId,Data,_Config) ->
 	io:format("Storing ~p\n",[ChunkId]),
+	ffs_chunk_server:write(ChunkId,Data),
 	ok.
 
 %% choose_storage(Path, [#storage{ filelist = FileList} = Storage| Rest]) ->
