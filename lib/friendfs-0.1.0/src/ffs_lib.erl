@@ -8,7 +8,7 @@
 
 
 -export([split_url/1,urlsplit_scheme/1,read_config/2,parse_config/1,scan_config_str/2]).
--export([get_value/2]).
+-export([get_value/2,get_chunkid/1]).
 -define(DELIMS,[$ ,$\n,$#,$>,$<,$\t]).
 
 split_url(Url) ->
@@ -204,6 +204,40 @@ make_int(Int) ->
 		{'EXIT',{badarg,_}} -> Int;
 		RealInt -> RealInt
 	end.
+
+get_chunkid(Data) ->
+	get_chunkid(crypto:sha(Data),"").
+get_chunkid(<<D/integer>>,Acc) ->
+	get_chunkid(<<D,0,0>>,Acc);
+get_chunkid(<<D1/integer,D2/integer>>,Acc) ->
+	get_chunkid(<<D1,D2,0>>,Acc);
+get_chunkid(<<D1/integer,D2/integer,D3/integer,Rest/binary>>,Acc) ->
+	RevFirst = int64_to_string((D1 bsl 4) + (D2 bsr 4)),
+	RevSecond = int64_to_string(((D2 rem (1 bsl 4)) bsl 8) + D3),
+	RevStr = RevSecond ++ RevFirst,
+	get_chunkid(Rest,RevStr ++ Acc);
+get_chunkid(<<>>,Acc) ->
+	lists:reverse(lists:flatten(Acc)).
+
+int64_to_string(Int) when Int < 64 ->
+	[base64(Int),$0];
+int64_to_string(Int) when Int < (1 bsl 12) ->
+	[base64((Int rem (1 bsl 6))),base64(Int bsr 6)].
+
+base64(Int) when Int < 10 ->
+	$0+Int;
+base64(Int) when Int < 35 ->
+	$a+Int-10;
+base64(Int) when Int < 60 ->
+	$A+Int-35;
+base64(60) ->
+	$_;
+base64(61) ->
+	$-;
+base64(62) ->
+	$.;
+base64(63) ->
+	$%.
 
 
 new_store() ->
