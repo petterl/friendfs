@@ -540,18 +540,38 @@ flush_cache(_Tid,Else) ->
 
 get_chunkid(Data) ->
 	get_chunkid(crypto:sha(Data),"").
-get_chunkid(<<Data/integer,Rest/binary>>,Acc) ->	
-	[Str] = io_lib:format("~.8B",[Data]),
-	RevStr = lists:reverse(pad(Str,"0",3)),
+get_chunkid(<<D/integer>>,Acc) ->
+	get_chunkid(<<D,0,0>>,Acc);
+get_chunkid(<<D1/integer,D2/integer>>,Acc) ->
+	get_chunkid(<<D1,D2,0>>,Acc);
+get_chunkid(<<D1/integer,D2/integer,D3/integer,Rest/binary>>,Acc) ->
+	RevFirst = int64_to_string((D1 bsl 4) + (D2 bsr 4)),
+	RevSecond = int64_to_string(((D2 rem (1 bsl 4)) bsl 8) + D3),
+	RevStr = RevSecond ++ RevFirst,
 	get_chunkid(Rest,RevStr ++ Acc);
 get_chunkid(<<>>,Acc) ->
 	lists:reverse(lists:flatten(Acc)).
 	
-pad(Str,_Num,Length) when length(Str) >= Length ->
-	Str;
-pad(Str,Num,Length) ->
-	pad([hd(Num)|Str],Num,Length).
-
+int64_to_string(Int) when Int < 64 ->
+	[base64(Int),$0];
+int64_to_string(Int) when Int < (1 bsl 12) ->
+	[base64((Int rem (1 bsl 6))),base64(Int bsr 6)].
+	
+base64(Int) when Int < 10 ->
+	$0+Int;
+base64(Int) when Int < 35 ->
+	$a+Int-10;
+base64(Int) when Int < 60 ->
+	$A+Int-35;
+base64(60) ->
+	$_;
+base64(61) ->
+	$-;
+base64(62) ->
+	$.;
+base64(63) ->
+	$%.
+	
 get_path_to_inode(Tid,Inode) ->
     get_path_to_inode(Tid,Inode,"").
 get_path_to_inode(_Tid,1,Path) ->
