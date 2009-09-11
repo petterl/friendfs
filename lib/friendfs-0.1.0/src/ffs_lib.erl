@@ -206,11 +206,21 @@ make_int(Int) ->
 	end.
 
 get_chunkid(Data) ->
-	get_chunkid(crypto:sha(Data),"").
+	Sha = Data,%crypto:sha(Data),
+	if
+		(size(Sha) rem 3) == 0 ->
+			get_chunkid(Sha,"");
+		(size(Sha) rem 3) == 1 ->
+			<<D/integer,Rest/binary>> = Sha,
+			get_chunkid(Rest,lists:reverse(get_chunkid(<<D>>,"")));
+		(size(Sha) rem 3) == 2 ->
+			<<D1/integer,D2/integer,Rest/binary>> = Sha,
+			get_chunkid(Rest,lists:reverse(get_chunkid(<<D1,D2>>,"")))
+	end.
 get_chunkid(<<D/integer>>,Acc) ->
-	get_chunkid(<<D,0,0>>,Acc);
+	get_chunkid(<<0,0,D>>,Acc);
 get_chunkid(<<D1/integer,D2/integer>>,Acc) ->
-	get_chunkid(<<D1,D2,0>>,Acc);
+	get_chunkid(<<0,D1,D2>>,Acc);
 get_chunkid(<<D1/integer,D2/integer,D3/integer,Rest/binary>>,Acc) ->
 	RevFirst = int64_to_string((D1 bsl 4) + (D2 bsr 4)),
 	RevSecond = int64_to_string(((D2 rem (1 bsl 4)) bsl 8) + D3),
