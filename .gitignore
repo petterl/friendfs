@@ -19,6 +19,7 @@ lib/sasl-*
 lib/stdlib-*
 lib/appmon-*
 lib/gs-*
+lib/crypto-*
 log
 releases
 *.html
