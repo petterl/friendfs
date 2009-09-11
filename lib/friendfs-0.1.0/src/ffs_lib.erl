@@ -206,7 +206,7 @@ make_int(Int) ->
 	end.
 
 get_chunkid(Data) ->
-	Sha = Data,%crypto:sha(Data),
+	Sha = crypto:sha(Data),
 	if
 		(size(Sha) rem 3) == 0 ->
 			get_chunkid(Sha,"");
