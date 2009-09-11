@@ -8,7 +8,7 @@
 
 
 -export([split_url/1,urlsplit_scheme/1,read_config/2,parse_config/1,scan_config_str/2]).
--export([get_value/2,get_chunkid/1]).
+-export([get_value/2,get_chunkid/1,get_hash/1,print_base64/1]).
 -define(DELIMS,[$ ,$\n,$#,$>,$<,$\t]).
 
 split_url(Url) ->
@@ -220,25 +220,61 @@ get_chunkid(<<>>,Acc) ->
 	lists:reverse(lists:flatten(Acc)).
 
 int64_to_string(Int) when Int < 64 ->
-	[base64(Int),$0];
+	[base64_enc(Int),$0];
 int64_to_string(Int) when Int < (1 bsl 12) ->
-	[base64((Int rem (1 bsl 6))),base64(Int bsr 6)].
+	[base64_enc((Int rem (1 bsl 6))),base64_enc(Int bsr 6)].
 
-base64(Int) when Int < 10 ->
+base64_enc(Int) when Int < 10 ->
 	$0+Int;
-base64(Int) when Int < 35 ->
+base64_enc(Int) when Int < 35 ->
 	$a+Int-10;
-base64(Int) when Int < 60 ->
+base64_enc(Int) when Int < 60 ->
 	$A+Int-35;
-base64(60) ->
+base64_enc(60) ->
 	$_;
-base64(61) ->
+base64_enc(61) ->
 	$-;
-base64(62) ->
+base64_enc(62) ->
 	$.;
-base64(63) ->
+base64_enc(63) ->
 	$%.
 
+get_hash(ChunkId) ->
+	get_hash(lists:reverse(ChunkId),<<>>).
+get_hash([D1,D2,D3,D4|Rest],Acc) ->
+	D1D = base64_dec(D1),
+	D2D = base64_dec(D2),
+	D3D = base64_dec(D3),
+	D4D = base64_dec(D4),
+	get_hash(Rest,<<((D3D bsr 4) + (D4D bsl 2))/integer,
+					((D2D bsr 2) + ((D3D rem (1 bsl 4)) bsl 4))/integer,
+					(D1D+ ((D2D rem (1 bsl 2)) bsl 6))/integer,
+					Acc/binary>>);
+get_hash([],Acc) ->
+	Acc.
+
+
+base64_dec($_) ->
+	60;
+base64_dec($-) ->
+	61;
+base64_dec($.) ->
+	62;
+base64_dec($%) ->
+	63;
+base64_dec(Char) when Char < $A ->
+	Char - $0;
+base64_dec(Char) when Char < $a ->
+	Char - $A + 35;
+base64_dec(Char) ->
+	Char - $a + 10.
+
+print_base64(String) when is_list(String) ->
+	[print_base64(Char)|| Char <- String],
+	io:format("\n"),
+	ok;
+print_base64(Char) ->
+	io:format("~6.2B",[base64_dec(Char)]).
 
 new_store() ->
     [].
