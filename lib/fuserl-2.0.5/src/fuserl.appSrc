@@ -4,4 +4,4 @@
               {modules,[fuserlsrv,fuserlportable,fuserlcodec,fuserl]},
               {registered,[]},
               {applications,[kernel,stdlib]},
-              {env,[{fuserldrvprefix,"/home/qluclar/packages/"}]}]}.
+              {env,[{fuserldrvprefix,auto_detect}]}]}.
