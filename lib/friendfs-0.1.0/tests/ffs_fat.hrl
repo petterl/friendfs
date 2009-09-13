@@ -15,7 +15,7 @@ init_test_() ->
 	    end,
     Tests = fun(Tid) ->
 		    inode_check(Tid,#ffs_inode{ inode = 1, hash = 0, size = 0, uid = 0,
-						gid = 0, mode = ?A bor ?D, refcount = 1 })
+						gid = 0, mode = 8#755 bor ?D, refcount = 1 })
 	    end,
     {setup,Setup,Tests}.
 
