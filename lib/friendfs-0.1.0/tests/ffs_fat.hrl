@@ -10,7 +10,7 @@ init_test_() ->
     Setup = fun() ->
 		    catch ets:delete(?COUNTER_TABLE),
 		    init_counters(),
-		    Tid = init(test),
+		    Tid = init(test,1 bsl 15),
 		    Tid
 	    end,
     Tests = fun(Tid) ->
