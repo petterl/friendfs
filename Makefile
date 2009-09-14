@@ -6,7 +6,7 @@ APPNAME=friendfs
 SCRIPTS=./scripts/
 RUNTIME=$(SCRIPTS)/runtime.escript
 
-DIRS=lib/fuserl-2.0.5/src lib/friendfs-0.1.0/src
+DIRS=lib/fuserl-2.0.5/src lib/friendfs-0.1.0/src lib/friendfs-0.1.0/doc
 ROOTDIR=`pwd`
 
 APPS:=$(shell cat friendfs.relSrc | sed 's/[\[\t{ ]*\([^,]*\).*/\1/' | grep -v release | grep -v erts | awk '{ printf "%s ", $$0 }')
