@@ -198,9 +198,16 @@ init([State,_Args]) ->
     		  {filesystem_id,1},
     		  {chunk_size,1 bsl 15}, %% 32 kB
     		  {mnt_opts,0},
-    		  {max_filename_size,36#sup}],
+    		  {max_filename_size,36#sup},
+              {uid,0},
+              {gid,0},
+              {mode,755}],
 
-    Tid = ffs_fat:init(State#state.name,ffs_lib:get_value(chunk_size,Config)),
+    Tid = ffs_fat:init(State#state.name,
+					   ffs_lib:get_value(chunk_size,Config),
+					   ffs_lib:get_value(uid,Config),
+					   ffs_lib:get_value(gid,Config),
+					   ffs_lib:get_value(mode,Config)),
 
     NewState = State#state{ fat = Tid, stats = Stats, config = Config },
     {ok, NewState}.
