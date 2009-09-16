@@ -9,7 +9,10 @@ PNGFILES=$(DOTFILES:%.dot=%.png)
 all: $(PNGFILES)
 
 clean:
-	rm $(PNGFILES)
+	@for i in `cat .gitignore`; do \
+		test -f $$i && (echo "rm $$i"; rm -f $$i); \
+	done 
+	rm -f $(PNGFILES)
 
 ## SUB TARGETS
 

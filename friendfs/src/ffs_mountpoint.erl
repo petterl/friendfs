@@ -154,7 +154,7 @@ create (#fuse_ctx{ uid = Uid, gid = Gid} = Ctx, ParentI,
     Param = inode_to_param(NewInode,State#state.filesystem),
     {#fuse_reply_create{fuse_entry_param = Param, fuse_file_info = Fi},State}.
 
-%% @spec flush (Ctx::#fuse_ct x{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { flush_async_reply (), NewState } | { noreply, NewState } 
+%% @spec flush (Ctx::#fuse_ctx{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { flush_async_reply (), NewState } | { noreply, NewState } 
 %%  flush_async_reply () = #fuse_reply_err{}
 %% @doc This is called on each close () of an opened file, possibly multiple
 %% times per {@link open/4. open} call (due to dup () et. al.).  

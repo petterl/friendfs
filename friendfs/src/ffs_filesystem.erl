@@ -51,7 +51,7 @@ start_link(Name,Args) ->
 %% List all files
 %%
 %% @spec
-%% list(Name) -> [Storage]
+%% list(Name, InodeI) -> [Storage]
 %% @end
 %%--------------------------------------------------------------------
 list(Name,INodeI) ->
@@ -74,7 +74,7 @@ read(Name,Path, Offset) ->
 %% Write a chunk to storages
 %%
 %% @spec
-%%   write(Name, Path, Data) -> ok | {error, Error}
+%%   write(Name, Inode, Path, Data) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
 write(SrvName, InodeI, Data, Offset) ->
@@ -96,7 +96,7 @@ flush(SrvName, InodeI ) ->
 %% create a new chunk
 %%
 %% @spec
-%%   write(Name, Parent, ) -> ok | {error, Error}	
+%%  create(Name, Parent, Name, Uid, Gid, Mode) -> ok | {error, Error}	
 %% @end
 %%--------------------------------------------------------------------
 create(SrvName, ParentI,Name,Uid,Gid,Mode) ->
@@ -109,7 +109,7 @@ create(SrvName, ParentI,Name,Uid,Gid,Mode) ->
 %% Delete a data path from all storages.
 %%
 %% @spec
-%%   delete(Name,Path) -> ok | {error, Error}
+%%   delete(Name,ParentI, Name) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
 delete(SrvName, ParentI,Name) ->
@@ -144,7 +144,7 @@ lookup(Name,Inode) ->
 %% Get information about the node in the given path.
 %%
 %% @spec
-%%   read_node_info(Name,Inode,Path) -> #ffs_node{} | {error, Error}
+%%   find(Name,Inode,Path) -> #ffs_node{} | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
 find(Name,Inode,Path) ->

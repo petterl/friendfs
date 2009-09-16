@@ -521,7 +521,7 @@ write_cache(Tid,InodeI,AppendData,Offset,Acc) ->
 %% Description	
 %%
 %% @spec
-%%   write_cache(Tid,InodeI) -> {chunk,ChunkId,Data} | empty
+%%   flush_cache(Tid,InodeI) -> {chunk,ChunkId,Data} | empty
 %%      Tid = ffs_tid()
 %%      InodeI = inodei()
 %% @end
