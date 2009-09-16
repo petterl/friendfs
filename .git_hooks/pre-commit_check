@@ -1,0 +1,8 @@
+#!/bin/sh
+#
+
+
+FILES=`git diff-index HEAD | awk '{ print $4, $6}' | grep -v 0000000000000000000000000000000000000000 | awk '{ print $2 }' | grep erl`
+for file in $FILES; do
+	make $file || (echo "Commit failed!" && exit 1)
+done

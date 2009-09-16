@@ -3,7 +3,7 @@ APPNAME=friendfs
 DOT=dot
 RUNTIME=$(SCRIPTS)/runtime.escript
 
-DOTFILES=read_sequence.dot
+DOTFILES=$(wildcard *.dot)
 PNGFILES=$(DOTFILES:%.dot=%.png)
 
 all: $(PNGFILES)
@@ -19,3 +19,7 @@ clean:
 %.png: %.dot
 	@echo "Generating $@"
 	$(DOT) -Tpng $< > $@
+
+%.html: ../src/%.erl
+	@echo Generating $@
+	erl -noshell -eval 'edoc:file("$<",[{dir,"$(PWD)"}])' -s init stop

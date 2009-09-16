@@ -34,14 +34,11 @@ clean: clean_beam clean_release clean_docs
 	rm -f .make.cache
 	rm -f erl_crash.dump
 	find . -name '*~' -exec rm {} \;
-	find . -name '*#' -exec rm {} \;
 
 clean_beam:
 	@for d in $(DIRS); do \
 		(cd $$d; $(MAKE) clean); \
 	done
-
-.PHONY: lib_friendfs
 
 clean_release:
 	rm -f erts-$(ERTS_VSN)
@@ -86,6 +83,11 @@ releases/$(REL_VSN)/%.boot: $(APPNAME).script $(APPNAME).rel
 %.script: %.rel
 	$(ERL) $(DIRS:%/src=-pz %/ebin) -noshell -s systools make_script $(basename $<) -s init stop
 
+.PHONY: force
+force: ;
+
+friendfs/%: force 
+	cd friendfs && $(MAKE) src/$(notdir $@)
 
 erts-%:
 	ln -s $(shell escript $(RUNTIME) erl_root)$@
