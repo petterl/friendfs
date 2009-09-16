@@ -21,7 +21,7 @@ OBJECTS=$(SOURCES:%.erl=$(EBIN)/%.beam) $(YRL_OBJECTS) $(APP_TARGET) $(APPUP_TAR
 TEST_SOURCE =$(wildcard $(TEST_DIR)/*.hrl) 
 TEST_OBJECTS=$(TEST_SOURCE:$(TEST_DIR)/%.hrl=$(DBG_DIR)/%.beam)
 
-all:$(EBIN) $(OBJECTS) $(APP)
+all:$(EBIN) $(APP) $(OBJECTS)
 
 $(EBIN):
 	@mkdir $@
