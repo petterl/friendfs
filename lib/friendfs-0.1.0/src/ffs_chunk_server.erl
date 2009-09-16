@@ -126,7 +126,7 @@ init(_Config) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call({read, ChunkId}, _From, State) ->
-    Storages = lists:keysearch(ChunkId, #chunk.storages, State#state.chunks),
+    Storages = lists:keysearch(ChunkId, #chunk.id, State#state.chunks),
     StoragePid = choose_storage(ChunkId, Storages, State#state.storages),
     Res = gen_server:call(StoragePid, {read, ChunkId}),
     {reply, Res, State};
