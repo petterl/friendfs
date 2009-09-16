@@ -9,7 +9,7 @@ PNGFILES=$(DOTFILES:%.dot=%.png)
 all: $(PNGFILES)
 
 clean:
-	rm $(PNGFILES)
+	rm -f $(PNGFILES)
 
 ## SUB TARGETS
 
