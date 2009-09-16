@@ -214,6 +214,8 @@ get_application_vsn([AppNameStr]) ->
 	    false -> check_for_appsrc(AppNameStr)
 	end.
 
+check_for_appsrc("friendfs") ->
+    hd(tl(string:tokens(os:cmd("cat VSN.mk | grep FRIENDFS_VSN"),"=")));
 check_for_appsrc(AppNameStr) ->
     {ok,Dirs} = file:list_dir("lib"),
 

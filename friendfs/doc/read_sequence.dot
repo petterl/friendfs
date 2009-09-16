@@ -1,0 +1,79 @@
+digraph G{
+    ranksep=.1;
+    size="7.5,7.5";
+    node [fontsize=8, style=point, width=.1, height=.1, color=grey, label=""];
+    edge [arrowhead=none, style=filled, color=grey];
+    
+    fuserl0 -> ffs_mountpoint0 [style=invis]
+    ffs_mountpoint0 -> ffs_filesystem0 [style=invis]
+    ffs_filesystem0 -> ffs_chunk_server0 [style=invis]
+    ffs_chunk_server0 -> ffs_storage_x0 [style=invis]
+
+    fuserl0 [color=black, shape=box, label="fuserl"];
+    fuserl0 -> fuserl1;
+    fuserl1 -> fuserl2;
+    fuserl2 -> fuserl3;
+    fuserl3 -> fuserl4;
+    fuserl4 -> fuserl5;
+    fuserl5 -> fuserl6;
+    fuserl6 -> fuserl7;
+
+    ffs_mountpoint0 [color=black, shape=box, label="ffs_mountpoint"];
+    ffs_mountpoint0 -> ffs_mountpoint1;
+    ffs_mountpoint1 -> ffs_mountpoint2;
+    ffs_mountpoint2 -> ffs_mountpoint3;
+    ffs_mountpoint3 -> ffs_mountpoint4;
+    ffs_mountpoint4 -> ffs_mountpoint5;
+    ffs_mountpoint5 -> ffs_mountpoint6;
+    ffs_mountpoint6 -> ffs_mountpoint7;
+    
+    ffs_filesystem0 [color=black, shape=box, label="ffs_filesystem"];
+    ffs_filesystem0 -> ffs_filesystem1;
+    ffs_filesystem1 -> ffs_filesystem2;
+    ffs_filesystem2 -> ffs_filesystem3;
+    ffs_filesystem3 -> ffs_filesystem4;
+    ffs_filesystem4 -> ffs_filesystem5;
+    ffs_filesystem5 -> ffs_filesystem6;
+    ffs_filesystem6 -> ffs_filesystem7;
+ 
+    ffs_chunk_server0 [color=black, shape=box, label="ffs_chunk_server"];
+    ffs_chunk_server0 -> ffs_chunk_server1;
+    ffs_chunk_server1 -> ffs_chunk_server2;
+    ffs_chunk_server2 -> ffs_chunk_server3;
+    ffs_chunk_server3 -> ffs_chunk_server4;
+    ffs_chunk_server4 -> ffs_chunk_server5;
+    ffs_chunk_server5 -> ffs_chunk_server6;
+    ffs_chunk_server6 -> ffs_chunk_server7;
+
+
+    ffs_storage_x0 [color=black, shape=box, label="ffs_storage_x"];
+    ffs_storage_x0 -> ffs_storage_x1;
+    ffs_storage_x1 -> ffs_storage_x2;
+    ffs_storage_x2 -> ffs_storage_x3;
+    ffs_storage_x3 -> ffs_storage_x4;
+    ffs_storage_x4 -> ffs_storage_x5;
+    ffs_storage_x5 -> ffs_storage_x6;
+    ffs_storage_x6 -> ffs_storage_x7;
+
+    {rank = same; edge[style=invis] fuserl0 -> ffs_mountpoint0 -> ffs_filesystem0 -> ffs_chunk_server0 -> ffs_storage_x0}
+    {rank = same; edge[style=invis] fuserl1 -> ffs_mountpoint1 -> ffs_filesystem1 -> ffs_chunk_server1 -> ffs_storage_x1}
+    {rank = same; edge[style=invis] fuserl2 -> ffs_mountpoint2 -> ffs_filesystem2 -> ffs_chunk_server2 -> ffs_storage_x2}
+    {rank = same; edge[style=invis] fuserl3 -> ffs_mountpoint3 -> ffs_filesystem3 -> ffs_chunk_server3 -> ffs_storage_x3}
+    {rank = same; edge[style=invis] fuserl4 -> ffs_mountpoint4 -> ffs_filesystem4 -> ffs_chunk_server4 -> ffs_storage_x4}
+    {rank = same; edge[style=invis] fuserl5 -> ffs_mountpoint5 -> ffs_filesystem5 -> ffs_chunk_server5 -> ffs_storage_x5}
+    {rank = same; edge[style=invis] fuserl6 -> ffs_mountpoint6 -> ffs_filesystem6 -> ffs_chunk_server6 -> ffs_storage_x6}
+    {rank = same; edge[style=invis] fuserl7 -> ffs_mountpoint7 -> ffs_filesystem7 -> ffs_chunk_server7 -> ffs_storage_x7}
+    
+
+    edge [style=filled, fontsize=8, weight=0, arrowtail=none,
+          arrowhead=normal, color=black];
+
+    // Transitions
+    fuserl1 -> ffs_mountpoint1 [label="read(Inode)"]
+    ffs_mountpoint2 -> ffs_filesystem2 [label="read(Inode, Ctx)"]
+    ffs_filesystem3 -> ffs_chunk_server3 [label="read(ChunkId, Ctx)"]
+    ffs_chunk_server4 -> ffs_storage_x4 [label="read(StoragePid, ChunkId, Ctx, ErrorCtx)"]
+    ffs_storage_x5 -> ffs_mountpoint5 [label="reply(Ctx, Data)",arrowhead=none]
+    ffs_mountpoint6 -> fuserl6 [label="reply(Data)"]
+}
+

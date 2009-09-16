@@ -1,0 +1,7 @@
+#!/bin/sh
+#
+
+dir=`dirname $0`
+for check in `ls -1 $dir/pre-commit_*` ; do
+    $check
+done

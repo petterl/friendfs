@@ -94,7 +94,7 @@ urlsplit_query("#" ++ Rest, Acc) ->
 urlsplit_query([C | Rest], Acc) ->
     urlsplit_query(Rest, [C | Acc]).
 
-%% @spec parse_config(Config,Defaults) -> [{key,value}|{key,value,list}]
+%% @spec read_config(Config,Defaults) -> [{key,value}|{key,value,list}]
 %% @doc Parses a config file and uses Defaults to fill in the blanks.
 %%
 read_config(Config,Defaults) ->
@@ -207,26 +207,28 @@ make_int(Int) ->
 
 get_chunkid(Data) ->
 	Sha = crypto:sha(Data),
-	if
-		(size(Sha) rem 3) == 0 ->
-			get_chunkid(Sha,"");
-		(size(Sha) rem 3) == 1 ->
-			<<D/integer,Rest/binary>> = Sha,
-			get_chunkid(Rest,lists:reverse(get_chunkid(<<D>>,"")));
-		(size(Sha) rem 3) == 2 ->
-			<<D1/integer,D2/integer,Rest/binary>> = Sha,
-			get_chunkid(Rest,lists:reverse(get_chunkid(<<D1,D2>>,"")))
-	end.
-get_chunkid(<<D/integer>>,Acc) ->
-	get_chunkid(<<0,0,D>>,Acc);
-get_chunkid(<<D1/integer,D2/integer>>,Acc) ->
-	get_chunkid(<<0,D1,D2>>,Acc);
-get_chunkid(<<D1/integer,D2/integer,D3/integer,Rest/binary>>,Acc) ->
-	RevFirst = int64_to_string((D1 bsl 4) + (D2 bsr 4)),
-	RevSecond = int64_to_string(((D2 rem (1 bsl 4)) bsl 8) + D3),
+	get_chunkid16(Sha).
+	
+	
+get_chunkid16(Data) ->
+	get_chunkid16(Data,"").
+get_chunkid16(<<D/integer,Rest/binary>>,Acc) when D > 15 ->
+	[[Hex1,Hex2]] = io_lib:format("~.16B",[D]),
+	get_chunkid16(Rest,[Hex2,Hex1|Acc]);
+get_chunkid16(<<D/integer,Rest/binary>>,Acc) when D < 16 ->
+	[[Hex1]] = io_lib:format("~.16B",[D]),
+	get_chunkid16(Rest,[Hex1,$0|Acc]);
+get_chunkid16(<<>>,Acc) ->
+	lists:reverse(Acc).
+
+get_chunkid64(Sha) ->
+	get_chunkid64(Sha,"").
+get_chunkid64(<<D1:12,D2:12,Rest/binary>>,Acc) ->
+	RevFirst = int64_to_string(D1),
+	RevSecond = int64_to_string(D2),
 	RevStr = RevSecond ++ RevFirst,
-	get_chunkid(Rest,RevStr ++ Acc);
-get_chunkid(<<>>,Acc) ->
+	get_chunkid64(Rest,RevStr ++ Acc);
+get_chunkid64(<<>>,Acc) ->
 	lists:reverse(lists:flatten(Acc)).
 
 int64_to_string(Int) when Int < 64 ->

@@ -1,0 +1,9 @@
+These are vaiour git hooks which are recommended to us. To install
+them in a fresh repository execute the following commands:
+
+cd .git/
+rm -rf hooks
+ln -s ../.git_hooks hooks
+cd ..
+
+Stolen from the Arora project: http://github.com/Arora/arora/tree/master/git_hooks/

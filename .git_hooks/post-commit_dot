@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+
+DOTFILES=`git diff-index HEAD | awk '{ print $4, $6}' | grep -v 0000000000000000000000000000000000000000 | awk '{ print $2 }' | grep dot`
+for dotfile in $DOTFILES; do
+    SUFFIX=`basename $dotfile | cut -d'.' -f2`
+    if [ $SUFFIX = "dot" ]; then
+	FILENAME=`basename $dotfile | cut -d'.' -f1`
+	PNG_PATH=`dirname $dotfile`/$FILENAME.png
+	make
+	[[ -d /tmp/friendfs ]] || (cd /tmp/ && git clone git@github.com:petterl/friendfs.git)
+	(cd /tmp/friendfs && git pull > /dev/null && git checkout -b gh-pages emotes/origin/gh-pages 2> /dev/null )
+	cp $PNG_PATH /tmp/friendfs/$PNG_PATH
+    fi
+done
+exit 1

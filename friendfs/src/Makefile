@@ -3,7 +3,7 @@ INCLUDE=../include
 TEST_DIR=../tests
 DBG_DIR=dbg/
 ERL_CALL=erl_call
-ERL_COMPILE_FLAGS += -pz ../../../lib/fuserl-2.0.5/ebin/ -pz ../../../lib/friendfs-0.1.0/ebin/
+ERL_COMPILE_FLAGS += 
 
 ERL_COMPILE_FLAGS += -I$(INCLUDE) +warn_unused_vars +nowarn_shadow_vars +warn_unused_import
 
@@ -21,7 +21,7 @@ OBJECTS=$(SOURCES:%.erl=$(EBIN)/%.beam) $(YRL_OBJECTS) $(APP_TARGET) $(APPUP_TAR
 TEST_SOURCE =$(wildcard $(TEST_DIR)/*.hrl) 
 TEST_OBJECTS=$(TEST_SOURCE:$(TEST_DIR)/%.hrl=$(DBG_DIR)/%.beam)
 
-all:$(EBIN) $(OBJECTS) $(APP)
+all:$(EBIN) $(APP) $(OBJECTS)
 
 $(EBIN):
 	@mkdir $@
@@ -39,12 +39,12 @@ $(EBIN)/%.beam:%.erl
 	@erlc -W $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 #	@echo "Copy to $(ERL_RUNTIME)/patches and load into VM if running"
 #	-@cp $@ $(ERL_RUNTIME)/patches/
-	-$(shell $(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
-		"code purge [$(basename $<)]" > /tmp/log 2> /dev/null )
-	-$(shell $(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
-		"code delete [$(basename $<)]" >> /tmp/log 2> /dev/null )
-	-$(shell $(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
-		"code load_file [$(basename $<)]"  >> /tmp/log 2> /dev/null )
+#	-$(shell $(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
+#		"code purge [$(basename $<)]" > /tmp/log 2> /dev/null )
+#	-$(shell $(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
+#		"code delete [$(basename $<)]" >> /tmp/log 2> /dev/null )
+#	-$(shell $(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
+#		"code load_file [$(basename $<)]"  >> /tmp/log 2> /dev/null )
 
 %.erl:%.yrl
 	@erl -boot start_clean -noshell -s yecc file $< -s init stop > /dev/null

@@ -9,7 +9,9 @@
 -module(ffs_fat).
 
 %% API
--export([init/2,
+-export([init/1,
+	 init/2,
+	 init/5,
 	 init_counters/0,
 	 make_dir/6,
 	 create/8,
@@ -70,7 +72,11 @@
 %%     Name = atom()
 %% @end
 %%--------------------------------------------------------------------
+init(Name) ->
+	init(Name,2 bsl 20).
 init(Name,ChunkSize) ->
+	init(Name,ChunkSize,0,0,?U bor ?G_X bor ?G_R bor ?O_X bor ?O_R).
+init(Name,ChunkSize,Uid,Gid,Mode) ->
     ets:insert(?COUNTER_TABLE,{Name,0}),
     Tid = #ffs_tid{ 
       name = Name,
@@ -78,7 +84,7 @@ init(Name,ChunkSize) ->
       link = ets:new(Name,[{keypos,#ffs_link.from},bag]),
       xattr = ets:new(Name,[{keypos,#ffs_xattr.inode},set]),
       config = [{chunk_size,ChunkSize},{chunkid_mfa,{ffs_lib,get_chunkid}}]},
-    create(Tid,1,"..",0,0,?D bor ?A,0,0),
+    create(Tid,1,"..",Uid,Gid,?D bor Mode,0,0),
     Tid.
 
 %%--------------------------------------------------------------------
@@ -496,16 +502,17 @@ write_cache(Tid,InodeI,AppendData,Offset,Acc) ->
 					<<OldData/binary,AppendData/binary>>
 			end,
 	io:format("Size of data is ~p\n",[size(NewData)]),
+	NewInode = Inode#ffs_inode{ size = size(AppendData) + Inode#ffs_inode.size },
 	if 
 		size(NewData) > ChunkSize ->
 			<<FirstChunk:ChunkSize/binary,Rest/binary>> = NewData,
-			Chunk = flush_cache(Tid,Inode#ffs_inode{ write_cache = FirstChunk }),
+			Chunk = flush_cache(Tid,NewInode#ffs_inode{ write_cache = FirstChunk }),
 			write_cache(Tid,InodeI,Rest,Offset+ChunkSize,[Chunk|Acc]);
 		size(NewData) == ChunkSize ->
-			Chunk = flush_cache(Tid,Inode#ffs_inode{ write_cache = NewData }),
+			Chunk = flush_cache(Tid,NewInode#ffs_inode{ write_cache = NewData }),
 			[Chunk|Acc];
 		true ->
-			ets:insert(Tid#ffs_tid.inode,Inode#ffs_inode{ write_cache = NewData }),
+			ets:insert(Tid#ffs_tid.inode,NewInode#ffs_inode{ write_cache = NewData }),
 			Acc
 	end.
 
@@ -514,7 +521,7 @@ write_cache(Tid,InodeI,AppendData,Offset,Acc) ->
 %% Description	
 %%
 %% @spec
-%%   write_cache(Tid,InodeI) -> {chunk,ChunkId,Data} | empty
+%%   flush_cache(Tid,InodeI) -> {chunk,ChunkId,Data} | empty
 %%      Tid = ffs_tid()
 %%      InodeI = inodei()
 %% @end
