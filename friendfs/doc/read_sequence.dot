@@ -72,7 +72,8 @@ digraph G{
     fuserl1 -> ffs_mountpoint1 [label="read(Inode)"]
     ffs_mountpoint2 -> ffs_filesystem2 [label="read(Inode, Ctx)"]
     ffs_filesystem3 -> ffs_chunk_server3 [label="read(ChunkId, Ctx)"]
-    ffs_chunk_server4 -> ffs_storage_x4 [label="read(StoragePid, ChunkId, Ctx, ErrorCtx)", labelangle=90]
-    ffs_storage_x5 -> ffs_mountpoint5 [label="reply(Ctx, Data)"]
+    ffs_chunk_server4 -> ffs_storage_x4 [label="read(StoragePid, ChunkId, Ctx, ErrorCtx)"]
+    ffs_storage_x5 -> ffs_mountpoint5 [label="reply(Ctx, Data)",arrowhead=none]
     ffs_mountpoint6 -> fuserl6 [label="reply(Data)"]
 }
+
