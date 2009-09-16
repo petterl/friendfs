@@ -94,7 +94,7 @@ urlsplit_query("#" ++ Rest, Acc) ->
 urlsplit_query([C | Rest], Acc) ->
     urlsplit_query(Rest, [C | Acc]).
 
-%% @spec parse_config(Config,Defaults) -> [{key,value}|{key,value,list}]
+%% @spec read_config(Config,Defaults) -> [{key,value}|{key,value,list}]
 %% @doc Parses a config file and uses Defaults to fill in the blanks.
 %%
 read_config(Config,Defaults) ->
