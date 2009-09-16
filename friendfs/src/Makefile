@@ -36,7 +36,7 @@ clean:
 
 $(EBIN)/%.beam:%.erl
 	@echo "Compiling and loading $<"
-	erlc -W $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+	@erlc -W $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 #	@echo "Copy to $(ERL_RUNTIME)/patches and load into VM if running"
 #	-@cp $@ $(ERL_RUNTIME)/patches/
 #	-$(shell $(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a \
