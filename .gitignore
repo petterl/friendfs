@@ -20,6 +20,7 @@ lib/stdlib-*
 lib/appmon-*
 lib/gs-*
 lib/crypto-*
+lib/friendfs-*
 log
 releases
 

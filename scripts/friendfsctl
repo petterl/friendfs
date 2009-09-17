@@ -4,10 +4,24 @@ FFS_ROOT=.
 ERL_COOKIE=friendfs
 ERL_SNAME=friendfs
 ERL_CALL=erl_call
+ROOTDIR=`cd $(dirname $0)/..;pwd`
+if [ -z "$RELDIR" ]; then
+    RELDIR=$ROOTDIR/releases
+fi
+FRIENDFS_CONF=${FRIENDFS_CONF:-/etc/friendfs.conf}
 
+function check() {
+    # Check validity of config file
+    if [ ! -f $1 ]; then
+        echo "Configuration file \"$1\" missing!"
+        exit 1
+    fi
+}
 
 function start() {
-    $FFS_ROOT/bin/start_friendfs
+    check $FRIENDFS_CONF
+    START_ERL_DATA=${1:-$RELDIR/start_erl.data}
+    $ROOTDIR/bin/run_erl -daemon $ROOTDIR/pipes/ $ROOTDIR/log "exec $ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $START_ERL_DATA -pa $ROOTDIR/patches/ -sname friendfs -setcookie friendfs -friendfs config_path '\"$FRIENDFS_CONF\"' " 
 }
 
 function stop() {

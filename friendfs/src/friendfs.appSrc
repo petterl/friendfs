@@ -6,6 +6,6 @@
               {applications,[kernel,stdlib,fuserl]},
               {mod,{friendfs,[]}},
               {env,[{linked_in,false},
-		    {config_path,"lib/friendfs-0.1.0/doc/test.config"},
-		    {config_default_path,"lib/friendfs-0.1.0/priv/default.config"},
+                    {config_path,"/etc/friendfs.conf"},
+                    {config_default_path,"lib/friendfs-0.1.0/priv/default.config"},
                     {mount_opts,"default_permissions"}]}]}.

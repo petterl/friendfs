@@ -20,6 +20,13 @@ make
 
 STARTING FRIENDFS:
 
+First you need to configure friendfs
+copy friendfs/doc/friendfs.conf to a good place
+
+Set FRIENDFS_CONF to the path to the updated config file
+If you put it as /etc/friendfs.conf you dont need to set the 
+FRIENDFS_CONF.
+
 You then can start and connect to the erlang VM using the command:
 
 scripts/friendfsctrl start
