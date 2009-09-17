@@ -1,9 +1,11 @@
-These are vaiour git hooks which are recommended to us. To install
-them in a fresh repository execute the following commands:
+These are various git hooks which are recommended by us. 
+To install them in a your repository execute the following 
+commands:
 
 cd .git/
 rm -rf hooks
 ln -s ../.git_hooks hooks
 cd ..
 
-Stolen from the Arora project: http://github.com/Arora/arora/tree/master/git_hooks/
+Stolen from the Arora project: 
+http://github.com/Arora/arora/tree/master/git_hooks/
