@@ -1,6 +1,5 @@
 #!/bin/sh 
 
-FFS_ROOT=.
 ERL_COOKIE=friendfs
 ERL_SNAME=friendfs
 ERL_CALL=erl_call
@@ -10,7 +9,7 @@ if [ -z "$RELDIR" ]; then
 fi
 FRIENDFS_CONF=${FRIENDFS_CONF:-/etc/friendfs.conf}
 
-function check() {
+function check_config() {
     # Check validity of config file
     if [ ! -f $1 ]; then
         echo "Configuration file \"$1\" missing!"
@@ -18,14 +17,32 @@ function check() {
     fi
 }
 
+function check_running() {
+    # Check if friendfs daemon is running
+    $ERL_CALL -c $ERL_COOKIE -sname $ERL_SNAME -a "ok" 2>/dev/null 1>&2
+    return $?
+}
+
 function start() {
-    check $FRIENDFS_CONF
+    if check_running; then
+        echo "Already started"
+        exit 1
+    fi
+    echo -n "Starting..."
+    check_config $FRIENDFS_CONF
     START_ERL_DATA=${1:-$RELDIR/start_erl.data}
     $ROOTDIR/bin/run_erl -daemon $ROOTDIR/pipes/ $ROOTDIR/log "exec $ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $START_ERL_DATA -pa $ROOTDIR/patches/ -sname friendfs -setcookie friendfs -friendfs config_path '\"$FRIENDFS_CONF\"' " 
+    # TODO: check that it started
+    echo "done"
 }
 
 function stop() {
-    $ERL_CALL -c $ERL_COOKIE -sname $ERL_SNAME -a "init stop []"
+    if check_running; then
+        $ERL_CALL -c $ERL_COOKIE -sname $ERL_SNAME -a "init stop []" >/dev/null
+        echo "Stopped"
+        exit 0
+    fi
+    echo "Already stopped"
 }
 
 function restart() {
@@ -34,8 +51,16 @@ function restart() {
     start
 }
 
+function status() {
+    if check_running; then
+        $ERL_CALL -c $ERL_COOKIE -sname $ERL_SNAME -a "friendfsctrl status []" 
+        exit 0
+    fi
+    echo "Not running"
+}
+
 function connect() {
-    $FFS_ROOT/bin/to_erl $FFS_ROOT/pipes/
+    $ROOTDIR/bin/to_erl $ROOTDIR/pipes/
 }
 
 function help() {
@@ -43,12 +68,15 @@ function help() {
     echo "   start - start the friendfs daemon"
     echo "   stop - stop the friendfs daemon"
     echo "   restart - restart the friendfs daemon"
+    echo "   status - get status of running daemon"
     echo "   connect - connect to the friendfs daemon"
     echo ""
     echo "To mount a filesystem see 'friendfs'"
 }
 
+
 case $1 in
+    'status') status ;;
     'start') start ;;
     'stop') stop ;;
     'restart') restart ;;
