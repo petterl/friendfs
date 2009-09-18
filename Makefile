@@ -18,9 +18,9 @@ export ERL_SNAME=friendfs
 export ERL_COMPILE_FLAGS+= -pa $(PWD)/lib/friendfs-$(FRIENDFS_VSN)/ebin $(foreach app,$(APP_VSNS), -pa $(PWD)/lib/$(app)/ebin)
 ERL_RUNTIME=$(PWD)/rts/
 
-all: setup_libs subdirs setup_release
+all: setup_libs compile setup_release
 
-subdirs:
+compile:
 	@for d in $(DIRS); do \
 		(cd $$d; $(MAKE)); \
 	done
@@ -53,12 +53,13 @@ clean_release:
 	-rm -f $(APP_VSNS:%=lib/%)
 
 clean_docs:
-	$(foreach d,$(DIRS),rm -f $d/../doc/*.html $d/../doc/edoc-info $d/../doc/stylesheet.css $d/../doc/erlang.png 2> /dev/null & )
+	rm -rf docs
 
-docs:subdirs
-	$(ERL) $(foreach dir,$(DIRS:%/src=%/ebin),-pa $(dir) ) -noshell -eval "edoc:application($(APPNAME))" -s init stop
-
-setup_libs: lib lib/friendfs-$(FRIENDFS_VSN) $(APP_VSNS:%=lib/%)
+docs:compile
+	-@mkdir -p docs
+	$(ERL) $(foreach dir,$(DIRS:%/src=%/ebin),-pa $(dir) ) -noshell -eval "edoc:application($(APPNAME),[{dir,\"docs\"}])" -s init stop
+	(cd $(APPNAME)/doc/ && make)
+	cp $(APPNAME)/doc/*.png docs/
 
 setup_release: erts-$(ERTS_VSN) setup_libs releases/$(REL_VSN) releases/$(REL_VSN)/start.boot releases/$(REL_VSN)/sys.config releases/start_erl.data bin pipes log patches
 
@@ -92,15 +93,14 @@ friendfs/%: force
 erts-%:
 	ln -s $(shell escript $(RUNTIME) erl_root)$@
 
+setup_libs: lib lib/friendfs-$(FRIENDFS_VSN) $(APP_VSNS:%=lib/%)
+
 lib/friendfs-%:
 	(cd lib && ln -s ../friendfs $(notdir $@))
 
 $(APP_VSNS:%=lib/%):
 	(cd lib && ln -s $(shell escript $(RUNTIME) erl_root)$@)
 
-
-releases/$(REL_VSN):
-	mkdir -p $@
 
 releases/$(REL_VSN)/sys.config: releases/$(REL_VSN) $(APPNAME).rel
 	echo "[]." > $@
@@ -113,5 +113,5 @@ bin:
 	cp scripts/start_friendfs bin/
 	chmod +x $@/start_friendfs
 
-pipes log patches lib:
+pipes log patches lib releases/$(REL_VSN):
 	mkdir -p $@
