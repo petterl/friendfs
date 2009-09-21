@@ -55,7 +55,7 @@ clean_release:
 clean_docs:
 	rm -rf docs
 
-docs:compile
+docs: setup_libs compile
 	-@mkdir -p docs
 	$(ERL) $(foreach dir,$(DIRS:%/src=%/ebin),-pa $(dir) ) -noshell -eval "edoc:application($(APPNAME),[{dir,\"docs\"}])" -s init stop
 	(cd $(APPNAME)/doc/ && make)
