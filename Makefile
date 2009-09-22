@@ -25,6 +25,9 @@ compile:
 		(cd $$d; $(MAKE)); \
 	done
 
+dialyzer: lib/friendfs.plt
+	dialyzer --plt lib/friendfs.plt -c friendfs/ebin
+
 test:
 	@for d in $(DIRS); do \
 		(cd $$d; $(MAKE) test); \
@@ -64,6 +67,12 @@ docs: setup_libs compile
 setup_release: erts-$(ERTS_VSN) setup_libs releases/$(REL_VSN) releases/$(REL_VSN)/start.boot releases/$(REL_VSN)/sys.config releases/start_erl.data bin pipes log patches
 
 ## SUB TARGETS
+
+lib/friendfs.plt: lib/otp.plt
+	dialyzer --plt lib/otp.plt --add_to_plt --output_plt lib/friendfs.plt -c lib/friendfs-$(FRIENDFS_VSN)/ebin
+
+lib/otp.plt: friendfs.rel
+	dialyzer --build_plt --output_plt lib/otp.plt -r $(APP_VSNS:%=lib/%)
 
 %.rel: %.relSrc
 	@echo "Updating $@"
