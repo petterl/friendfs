@@ -12,7 +12,7 @@ init(_Args) ->
     {ok, []}.
 
 handle_call({read, Cid}, _From, State) ->
-    {ok, Data} = lists:keysearch(Cid, 1, State),
+    {value, Data} = lists:keysearch(Cid, 1, State),
     {reply, Data, State};
 
 handle_call({write, Cid, Data}, _From, State) ->

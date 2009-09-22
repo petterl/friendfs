@@ -18,14 +18,14 @@ export ERL_SNAME=friendfs
 export ERL_COMPILE_FLAGS+= -pa $(PWD)/lib/friendfs-$(FRIENDFS_VSN)/ebin $(foreach app,$(APP_VSNS), -pa $(PWD)/lib/$(app)/ebin)
 ERL_RUNTIME=$(PWD)/rts/
 
-all: setup_libs compile setup_release
+all: compile setup_release
 
-compile:
+compile: setup_libs
 	@for d in $(DIRS); do \
 		(cd $$d; $(MAKE)); \
 	done
 
-dialyzer: lib/friendfs.plt
+dialyzer: compile lib/friendfs.plt
 	dialyzer --plt lib/friendfs.plt -c friendfs/ebin
 
 test:
@@ -58,7 +58,7 @@ clean_release:
 clean_docs:
 	rm -rf docs
 
-docs: setup_libs compile
+docs: compile
 	-@mkdir -p docs
 	$(ERL) $(foreach dir,$(DIRS:%/src=%/ebin),-pa $(dir) ) -noshell -eval "edoc:application($(APPNAME),[{dir,\"docs\"}])" -s init stop
 	(cd $(APPNAME)/doc/ && make)

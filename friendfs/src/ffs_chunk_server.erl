@@ -40,7 +40,7 @@
 -record(chunk, {
           id,           % Chunk ID
           ratio = 1,    % Maximum Requested chunk ratio by fileservers
-          storages = [] % List of pids where chunk is stored
+          storages = [] % List of storage URLs where chunk is stored
         }).
 
 %%%===================================================================
@@ -126,8 +126,9 @@ init(_Config) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call({read, ChunkId}, _From, State) ->
-    Storages = lists:keysearch(ChunkId, #chunk.id, State#state.chunks),
-    StoragePid = choose_storage(ChunkId, Storages, State#state.storages),
+    Chunk = lists:keyfind(ChunkId, #chunk.id, State#state.chunks),
+    StoragesWithChunk = Chunk#chunk.storages,
+    StoragePid = choose_storage(ChunkId, StoragesWithChunk, State#state.storages),
     Res = gen_server:call(StoragePid, {read, ChunkId}),
     {reply, Res, State};
 handle_call({write, Cid, _Ratio=all, Data}, _From, State) ->
@@ -236,23 +237,26 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%==================================================================
-find_module(Url) ->
-    {Scheme, _Rest} = friendfs_lib:urlsplit_scheme(Url),
-    find_module_by_scheme(Scheme).
+%find_module(Url) ->
+%    {Scheme, _Rest} = friendfs_lib:urlsplit_scheme(Url),
+%    find_module_by_scheme(Scheme).
 
-find_module_by_scheme(local) ->
-    ffs_storage_file;
-find_module_by_scheme(ram) ->
-    ffs_storage_mem;
-find_module_by_scheme(Type) ->
-    throw({no_storage_module_availible, Type}).
+%find_module_by_scheme(local) ->
+%    ffs_storage_file;
+%find_module_by_scheme(ram) ->
+%    ffs_storage_mem;
+%find_module_by_scheme(Type) ->
+%    throw({no_storage_module_availible, Type}).
 
-find_storage(Url, []) ->
-    throw({storage_module_missing, Url});
-find_storage(Url, [Storage = #storage{url = Url} | _]) ->
-    Storage;
-find_storage(Url, [_ | R]) ->
-    find_storage(Url, R).
+%find_storage(Url, []) ->
+%    throw({storage_module_missing, Url});
+%find_storage(Url, [Storage = #storage{url = Url} | _]) ->
+%    Storage;
+%find_storage(Url, [_ | R]) ->
+%    find_storage(Url, R).
 
-choose_storage(_ChunkId, [Storage | _Rest], _StorageData) ->
-    Storage.
+choose_storage(_ChunkId, [], _StorageList) ->
+    not_found;
+choose_storage(_ChunkId, [StorageURL | _Rest], StorageList) ->
+    {value, Storage} = lists:keysearch(StorageURL, #storage.url, StorageList),
+    Storage#storage.pid.
