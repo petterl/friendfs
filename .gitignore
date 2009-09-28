@@ -1,4 +1,3 @@
-*.beam
 friendfs.boot
 friendfs.rel.backup
 friendfs.script
@@ -20,6 +19,10 @@ lib/stdlib-*
 lib/appmon-*
 lib/gs-*
 lib/crypto-*
+lib/friendfs-*
+lib/fuserl-*/ebin
+lib/*.plt
+friendfs/ebin
 log
 releases
-
+docs
