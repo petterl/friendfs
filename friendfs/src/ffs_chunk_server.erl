@@ -168,7 +168,6 @@ handle_cast({register_storage, From, Url, Chunks}, State) ->
     Chunks2 = add_pid_to_chunks(State#state.chunks, Chunks, From),
     {noreply, State#state{storages = Storages, chunks = Chunks2}};
 handle_cast({update_storage, From, Added, Removed}, State) ->
-    %io:format("Changed Files: ~nAdded~n~p~nRemoved~n~p~n", [Added, Removed]),
     Chunks  = remove_pid_from_chunks(State#state.chunks, Removed, From),
     Chunks2 = add_pid_to_chunks(Chunks, Added, From),
     {noreply, State#state{chunks = Chunks2}};
@@ -242,6 +241,13 @@ code_change(_OldVsn, State, _Extra) ->
 %find_storage(Url, [_ | R]) ->
 %    find_storage(Url, R).
 
+add_pid_to_chunks(AllChunks, [Chunk | R], Pid) ->
+    AllChunks.
+
+remove_pid_from_chunks(AllChunks, [Chunk | R], Pid) ->
+    AllChunks.
+   
+    
 choose_storage(_ChunkId, [], _StorageList) ->
     not_found;
 choose_storage(_ChunkId, [StorageURL | _Rest], StorageList) ->
