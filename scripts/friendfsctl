@@ -12,9 +12,9 @@ FRIENDFS_CONF=${FRIENDFS_CONF:-/etc/friendfs.conf}
 function check_config() {
     # Check validity of config file
     if [ ! -f $1 ]; then
-        echo "Configuration file \"$1\" missing!"
-        exit 1
+        return 1
     fi
+    return 0
 }
 
 function check_running() {
@@ -23,13 +23,37 @@ function check_running() {
     return $?
 }
 
+function check_environment() {
+    # Check that run_erl has been built
+    if [ ! -f $ROOTDIR/bin/run_erl ]; then
+        return 1
+    fi
+    return 0
+}
+
 function start() {
     if check_running; then
         echo "Already started"
         exit 1
     fi
     echo -n "Starting..."
-    check_config $FRIENDFS_CONF
+    if ! check_config $FRIENDFS_CONF; then
+        FRIENDFS_CONF=$HOME/.friendfs.conf
+        if ! check_config $FRIENDFS_CONF; then
+            echo "failed"
+            echo "Copying config template to $FRIENDFS_CONF"
+            cp $ROOTDIR/friendfs/doc/friendfs.conf $FRIENDFS_CONF
+            echo ""
+            echo "Update $FRIENDFS_CONF with your configuration and start again"
+            echo ""
+            exit 100
+        fi
+    fi
+    if ! check_environment; then
+        echo "failed"
+        echo "Make sure you have run make first"
+        exit 1
+    fi
     START_ERL_DATA=${1:-$RELDIR/start_erl.data}
     $ROOTDIR/bin/run_erl -daemon $ROOTDIR/pipes/ $ROOTDIR/log "exec $ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $START_ERL_DATA -pa $ROOTDIR/patches/ -sname friendfs -setcookie friendfs -friendfs config_path '\"$FRIENDFS_CONF\"' " 
     # TODO: check that it started
