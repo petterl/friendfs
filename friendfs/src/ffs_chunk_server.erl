@@ -166,6 +166,7 @@ handle_cast({register_storage, From, Url, Chunks}, State) ->
     Ref = erlang:monitor(process, From),
     Storages = [#storage{url = Url, pid = From, ref = Ref} | State#state.storages],
     Chunks2 = add_pid_to_chunks(State#state.chunks, Chunks, From),
+    io:format("C: ~p~nC2: ~p~n", [Chunks, Chunks2]),
     {noreply, State#state{storages = Storages, chunks = Chunks2}};
 handle_cast({update_storage, From, Added, Removed}, State) ->
     Chunks  = remove_pid_from_chunks(State#state.chunks, Removed, From),
@@ -186,7 +187,7 @@ handle_cast(_Msg, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info({'DOWN', Ref, process, Pid, Reason}, State) ->
+handle_info({'DOWN', _Ref, process, Pid, _Reason}, State) ->
     io:format("DOWN ~p~n", [Pid]),
     Storages = lists:keydelete(Pid, #storage.pid, State#state.storages),
     Chunks = remove_pid_from_chunks(State#state.chunks, State#state.chunks, Pid),
@@ -241,12 +242,41 @@ code_change(_OldVsn, State, _Extra) ->
 %find_storage(Url, [_ | R]) ->
 %    find_storage(Url, R).
 
-add_pid_to_chunks(AllChunks, [Chunk | R], Pid) ->
-    AllChunks.
 
-remove_pid_from_chunks(AllChunks, [Chunk | R], Pid) ->
-    AllChunks.
-   
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Adds the Pid in the list of storages for each chunk in Chunklist
+%%
+%% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
+%% @end
+%%--------------------------------------------------------------------
+add_pid_to_chunks([], [], _Storage) ->
+    [];
+add_pid_to_chunks([], [StorageChunkId | R], Storage) ->
+    [#chunk{id=StorageChunkId, storages=[Storage]} |
+    add_pid_to_chunks([], R, Storage)];
+add_pid_to_chunks([Chunk | R], StorageChunkIds, Storage) ->
+    case lists:member(Chunk#chunk.id, StorageChunkIds) of
+        true ->
+            [Chunk#chunk{storages = [Storage | Chunk#chunk.storages]} |
+             add_pid_to_chunks(R, StorageChunkIds -- [Chunk#chunk.id], Storage)];
+        false ->
+            [Chunk | add_pid_to_chunks(R, StorageChunkIds, Storage)]
+    end.
+
+remove_pid_from_chunks([], _StorageChunkIds, _Storage) ->
+    [];
+remove_pid_from_chunks([Chunk | R], StorageChunkIds, Storage) ->
+    case lists:member(Chunk#chunk.id, StorageChunkIds) of
+        true ->
+            [Chunk#chunk{storages = Chunk#chunk.storages -- [Storage]} |
+             remove_pid_from_chunks(R, StorageChunkIds, Storage)];
+        false ->
+            [Chunk | remove_pid_from_chunks(R, StorageChunkIds, Storage)]
+    end.
+    
     
 choose_storage(_ChunkId, [], _StorageList) ->
     not_found;

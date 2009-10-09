@@ -21,7 +21,8 @@
 -define(REFRESH_INTERVAL, 5000).
 
 -record(state,
-	{path,        % Path of files
+	{url,         % URL in config file
+     path,        % Path of files
      chunks = []  % Chunks in storage
 	}).
 
@@ -56,7 +57,7 @@ init([Url, _Config]) ->
     case file:list_dir(Path) of
         {ok, List} ->
             ffs_chunk_server:register_storage(self(), Url, List),
-    	    {ok, #state{path=Path, chunks=List}, ?REFRESH_INTERVAL};
+    	    {ok, #state{url=Url, path=Path, chunks=List}, ?REFRESH_INTERVAL};
         _ ->
 	        {stop, path_missing_in_config}
     end.
@@ -84,7 +85,9 @@ handle_call({delete, Cid}, _From, State) ->
     {reply, Res, State, ?REFRESH_INTERVAL};
 handle_call({write, Path, Data}, _From, State) ->
     Result = file:write_file(join(State#state.path, Path),Data),
-    {reply, Result, State, ?REFRESH_INTERVAL}.
+    {reply, Result, State, ?REFRESH_INTERVAL};
+handle_call(info, _From, State) ->
+    {reply, State, State}.
 
 
 %%--------------------------------------------------------------------
@@ -113,14 +116,7 @@ handle_cast({read, From, Path, _Offset}, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info(timeout, State) ->
-    {ok, Files} = file:list_dir(State#state.path),
-    Added = lists:subtract(Files, State#state.chunks),
-    Removed = lists:subtract(State#state.chunks, Files),
-    case {Added, Removed} of
-        {[], []} -> ok;
-        _ -> ffs_chunk_server:update_storage(self(), Added, Removed)
-    end,
-    State2 = State#state{chunks = Files},
+    State2 = refresh_storage(State),
     {noreply, State2, ?REFRESH_INTERVAL};
 
 handle_info(_Info, State) ->
@@ -159,3 +155,12 @@ code_change(_OldVsn, State, _Extra) ->
 join(Path, Filename) ->
     filename:join(Path, Filename).
 
+refresh_storage(State) ->
+    {ok, Files} = file:list_dir(State#state.path),
+    Added = lists:subtract(Files, State#state.chunks),
+    Removed = lists:subtract(State#state.chunks, Files),
+    case {Added, Removed} of
+        {[], []} -> ok;
+        _ -> ffs_chunk_server:update_storage(self(), Added, Removed)
+    end,
+    State#state{chunks = Files}.
