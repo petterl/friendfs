@@ -35,7 +35,7 @@ clean:
 	rm -fr $(OBJECTS) $(APP) $(EBIN) $(DBG_DIR)
 
 $(EBIN)/%.beam:%.erl
-	@echo "Compiling and loading $<"
+	@echo "Compiling $<"
 	@erlc -W $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 #	@echo "Copy to $(ERL_RUNTIME)/patches and load into VM if running"
 #	-@cp $@ $(ERL_RUNTIME)/patches/
