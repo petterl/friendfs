@@ -127,24 +127,28 @@ init(_Config) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({read, ChunkId}, _From, State) ->
+handle_call({read, ChunkId}, From, State) ->
     Chunk = lists:keyfind(ChunkId, #chunk.id, State#state.chunks),
     StoragesWithChunk = Chunk#chunk.storages,
     StoragePid = choose_storage(ChunkId, StoragesWithChunk, State#state.storages),
-    Res = gen_server:call(StoragePid, {read, ChunkId}),
-    {reply, Res, State};
-handle_call({write, Cid, _Ratio=all, Data}, _From, State) ->
-    Res = lists:map(
-            fun(#storage{pid = Pid}) ->
-                    gen_server:call(Pid, {write, Cid, Data}) end,
-            State#state.storages),
-    {reply, Res, State};
+    ok = gen_server:cast(StoragePid, {read, ChunkId, From}),
+    {noreply, State};
 handle_call({write, Cid, Ratio, Data}, _From, State) ->
-    Storages = lists:sublist(State#state.storages, Ratio),
-    Res = lists:map(
-            fun(#storage{pid = Pid}) ->
-                    gen_server:call(Pid, {write, Cid, Data}) end,
-            Storages),
+    [Storage | _OtherStores] = case Ratio of
+                                   all ->
+                                       State#state.storages;
+                                   _ ->
+                                       lists:sublist(State#state.storages, Ratio)
+                               end,
+    % store on one server
+    Res = case gen_server:call(Storage#storage.pid, {write, Cid, Data}) of
+              ok ->
+                  % TODO: Schedule sync of data
+                  ok;
+              _ ->
+                  % Failed to store data
+                  error
+          end,
     {reply, Res, State};
 handle_call(info, _From, State) ->
     {reply, State, State};
@@ -165,7 +169,7 @@ handle_call(_Request, _From, State) ->
 handle_cast({register_storage, From, Url, Chunks}, State) ->
     Ref = erlang:monitor(process, From),
     Storages = [#storage{url = Url, pid = From, ref = Ref} | State#state.storages],
-    Chunks2 = add_pid_to_chunks(State#state.chunks, Chunks, From),
+    Chunks2 = add_pid_to_chunks(State#state.chunks, Chunks, Url),
     io:format("C: ~p~nC2: ~p~n", [Chunks, Chunks2]),
     {noreply, State#state{storages = Storages, chunks = Chunks2}};
 handle_cast({update_storage, From, Added, Removed}, State) ->

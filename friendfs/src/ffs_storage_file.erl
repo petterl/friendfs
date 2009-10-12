@@ -87,7 +87,7 @@ handle_call({write, Path, Data}, _From, State) ->
     Result = file:write_file(join(State#state.path, Path),Data),
     {reply, Result, State, ?REFRESH_INTERVAL};
 handle_call(info, _From, State) ->
-    {reply, State, State}.
+    {reply, State, State, ?REFRESH_INTERVAL}.
 
 
 %%--------------------------------------------------------------------
@@ -100,7 +100,7 @@ handle_call(info, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({read, From, Path, _Offset}, State) ->
+handle_cast({read, Path, From}, State) ->
     Data = file:read_file(join(State#state.path, Path)),
     gen_server:reply(From,Data),
     {noreply, State, ?REFRESH_INTERVAL}.
