@@ -29,11 +29,11 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
- 
+
 -define(SERVER, ?MODULE).
- 
+
 -record(state, {storages = [],  %% Registered storages
-                chunks = []     %% List of {Chunk, RequestedRatio} 
+                chunks = []     %% List of {Chunk, RequestedRatio}
                 }).
 
 -record(storage, {
@@ -41,8 +41,8 @@
           pid,            % Pid of storage process
           ref,            % Monitor Reference
           priority = 100  % Priority of storage
-         }). 
- 
+         }).
+
 -record(chunk, {
           id,           % Chunk ID
           ratio = 1,    % Maximum Requested chunk ratio by fileservers
@@ -50,15 +50,15 @@
         }).
 
 %%====================================================================
-%% Typedefs 
+%% Typedefs
 %%====================================================================
 %% @type config() = list().
-%%     Contains configuration settings for ther system. 
+%%     Contains configuration settings for ther system.
 %% @end
-%% @type chunk_id() = string(). 
+%% @type chunk_id() = string().
 %%     The ID of a chunk. A generated unique string.
 %% @end
-%% @type storage_url() = string().  
+%% @type storage_url() = string().
 %%     The url that this storage is connected to.
 %% @end
 
@@ -106,7 +106,7 @@ write(ChunkId, Data) ->
 %%
 %% @spec
 %%   write(chunk_id(), binary(), Ratio) -> ok | {error, Reason}
-%%     Ratio = infinite | int() 
+%%     Ratio = infinite | int()
 %%     Reason = already_exists | enoent | eacces | eisdir | enotdir | atom()
 %% @end
 %%--------------------------------------------------------------------
@@ -209,11 +209,17 @@ handle_call({ write, ChunkId, Ratio, Data}, _From, State) ->
         {value, _} ->
             {reply, {error, already_exists}, State};
         _ ->
-            [Storage | _OtherStores] =
-                choose_write_storages(Ratio, State#state.storages),
+            Storages = choose_write_storages(Ratio, State#state.storages),
             % store on one server
-            Res = store_and_schedule(Storage, ChunkId, Data),
-            {reply, Res, State}
+            case write_on_one(Storages, ChunkId, Data) of
+                {ok, Storage, _Remaining} ->
+                    % Update chunk info
+                    State1 = add_storage_to_chunks(State#state.chunks, [ChunkId], Storage),
+                    % TODO: Schedule storage on rest
+                    {reply, ok, State1};
+                {error, _} = Error ->
+                    {reply, Error, State}
+            end
     end;
 
 handle_call({ delete, ChunkId}, _From, State) ->
@@ -224,15 +230,16 @@ handle_call({ delete, ChunkId}, _From, State) ->
             Res = {error, missing};
         {value, Chunk} ->
             % Remove from chunklist by setting ratio to 0
-            Chunks = lists:keyreplace(ChunkId, #chunk.id, State#state.chunks, Chunk#chunk{ratio=0}),
-            % TODO:Schedule removal from all storages
+            Chunks = lists:keyreplace(ChunkId, #chunk.id, State#state.chunks,
+                                      Chunk#chunk{ratio=0}),
+            % TODO: Schedule removal from all storages
             % Right now, remove from all
             lists:map(fun(#storage{pid = StoragePid}) ->
                               gen_server:cast(StoragePid, {delete, ChunkId})
                       end,
                       get_storage_from_url(Chunk#chunk.storages,
                                            State#state.storages)),
-            Res = ok                
+            Res = ok
     end,
     {reply, Res, State#state{chunks = Chunks}};
 
@@ -374,8 +381,8 @@ remove_storage_from_chunks([Chunk | R], StorageChunkIds, Storage) ->
         false ->
             [Chunk | remove_storage_from_chunks(R, StorageChunkIds, Storage)]
     end.
-    
-    
+
+
 choose_storage(_ChunkId, [], _StorageList) ->
     not_found;
 choose_storage(_ChunkId, [StorageURL | _Rest], StorageList) ->
@@ -387,14 +394,14 @@ choose_write_storages(infinite, StorageList) ->
 choose_write_storages(Ratio, StorageList) ->
     lists:sublist(StorageList, Ratio).
 
-store_and_schedule(#storage{pid = Pid}, ChunkId, Data) ->
+write_on_one([], _ChunkId, _Data) ->
+    {error, failed_to_write};
+write_on_one([#storage{pid = Pid} = S | R], ChunkId, Data) ->
     case gen_server:call(Pid, {write, ChunkId, Data}) of
-        ok ->
-            % TODO: Schedule sync of data
-            ok;
+        ok -> {ok, S, R};
         _ ->
-            % Failed to store data
-            error
+            % Failed to store data, try store on next
+            write_on_one(R, ChunkId, Data)
     end.
 
 get_storage_from_url([], _Storages) ->
