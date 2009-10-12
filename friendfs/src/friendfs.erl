@@ -86,22 +86,3 @@ stop () ->
 stop(_State) ->
   ok.
 
-%%--------------------------------------------------------------------
-%% @doc
-%%   Mount a filesystem
-%%
-%% @spec
-%%   add_config(MountPoint, Opts) -> ok
-%%     MountPoint = string()
-%%     Opts = list()
-%% @end
-%%--------------------------------------------------------------------
-%add_config(MountPoint,Opts) ->
-%    { ok, LinkedIn } = application:get_env(friendfs, linked_in),
-%    { ok, MountOpts } = application:get_env (friendfs, mount_opts),
-%    %% Beacuse friendfs is started with start_link it will crash when
-%    %% the mounting process finsishes at the moment. But it is all work in
-%    %% progress!
-%    friendfs_sup:mount(LinkedIn, MountPoint, MountOpts),
-%    io:format("Adding a new mount point!\n  Config = ~p with config ~p\n",[MountPoint,Opts]).
-    
