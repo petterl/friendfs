@@ -41,9 +41,9 @@ $(EBIN)/%.beam:%.erl
 	@echo " * Copy $@ to $(ROOTDIR)/patches"
 	-@cp $@ $(ROOTDIR)/patches/
 	@echo " * Load $(basename $<) into node $(ERL_SNAME)"
-	-$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a "code purge [$(basename $<)]" 
-	-$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a "code delete [$(basename $<)]" 
-	-$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a "code load_file [$(basename $<)]" 
+	-@$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a "code purge [$(basename $<)]" > /dev/null
+	-@$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a "code delete [$(basename $<)]"  > /dev/null
+	-@$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a "code load_file [$(basename $<)]" > /dev/null
 
 %.erl:%.yrl
 	@erl -boot start_clean -noshell -s yecc file $< -s init stop > /dev/null
