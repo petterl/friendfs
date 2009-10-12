@@ -55,11 +55,10 @@ init([Url, _Config]) ->
 			Host++UrlPath
 	end,
     case file:list_dir(Path) of
-        {ok, List} ->
-            ffs_chunk_server:register_storage(self(), Url, List),
-    	    {ok, #state{url=Url, path=Path, chunks=List}, ?REFRESH_INTERVAL};
-        _ ->
-	        {stop, path_missing_in_config}
+        {ok, _List} ->
+    	    {ok, #state{url=Url, path=Path}, ?REFRESH_INTERVAL};
+        {error, _} ->
+	        {stop, bad_path_for_storage, Path}
     end.
 
 
@@ -80,12 +79,16 @@ init([Url, _Config]) ->
 handle_call(list, _From, State) ->
     Res = file:list_dir(State#state.path),
     {reply, Res, State, ?REFRESH_INTERVAL};
-handle_call({delete, Cid}, _From, State) ->
-    Res = file:delete(join(State#state.path, Cid)),
-    {reply, Res, State, ?REFRESH_INTERVAL};
+
 handle_call({write, Path, Data}, _From, State) ->
     Result = file:write_file(join(State#state.path, Path),Data),
     {reply, Result, State, ?REFRESH_INTERVAL};
+
+handle_call(refresh, _From, State) ->
+    {ok, Files} = file:list_dir(State#state.path),
+    ffs_chunk_server:update_storage(State#state.url, self(), Files, all),
+    {reply, Files, State, ?REFRESH_INTERVAL};
+
 handle_call(info, _From, State) ->
     {reply, State, State, ?REFRESH_INTERVAL}.
 
@@ -100,9 +103,16 @@ handle_call(info, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast({delete, Cid}, State) ->
+    % Delete file from dir
+    file:delete(join(State#state.path, Cid)),
+    {noreply, State, ?REFRESH_INTERVAL};
+
 handle_cast({read, Path, From}, State) ->
-    Data = file:read_file(join(State#state.path, Path)),
-    gen_server:reply(From,Data),
+    % Read data from file
+    Res = file:read_file(join(State#state.path, Path)),
+    % Send it to requesting process
+    gen_server:reply(From, Res),
     {noreply, State, ?REFRESH_INTERVAL}.
 
 %%--------------------------------------------------------------------
@@ -159,8 +169,5 @@ refresh_storage(State) ->
     {ok, Files} = file:list_dir(State#state.path),
     Added = lists:subtract(Files, State#state.chunks),
     Removed = lists:subtract(State#state.chunks, Files),
-    case {Added, Removed} of
-        {[], []} -> ok;
-        _ -> ffs_chunk_server:update_storage(self(), Added, Removed)
-    end,
+    ffs_chunk_server:update_storage(State#state.url, self(), Added, Removed),
     State#state{chunks = Files}.

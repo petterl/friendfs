@@ -19,7 +19,7 @@ start_link (Args) ->
 init(Args) ->
     ChunkServer =
         {ffs_chunk_server,
-	        {ffs_chunk_server, start_link, [Args]},
+	        {ffs_chunk_server, start, [Args]},
 	        permanent, 10000, worker, [ffs_chunk_server]},
 
     Storage =
