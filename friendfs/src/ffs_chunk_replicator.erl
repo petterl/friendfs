@@ -23,14 +23,15 @@
 %% Replication API
 -export([info/0]).
 
-
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE).
+-define(INTERVAL, 10000).
 
--record(state, {}).
+-record(state, {queue = []  % replication queue
+            }).
 
 %%====================================================================
 %% Typedefs
@@ -81,7 +82,7 @@ info() ->
 %% @end
 %%--------------------------------------------------------------------
 init(_Config) ->
-    {ok, #state{}}.
+    {ok, #state{}, ?INTERVAL}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -98,11 +99,11 @@ init(_Config) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call( info, _From, State) ->
-    {reply, State, State};
+    {reply, State, State, ?INTERVAL};
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
-    {reply, Reply, State}.
+    {reply, Reply, State, ?INTERVAL}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -114,8 +115,20 @@ handle_call(_Request, _From, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast({add, Action}, State = #state{queue=Q}) ->
+    {noreply, State#state{queue=Q++[Action]}, ?INTERVAL};
+
+handle_cast(refresh, State = #state{queue=Q}) ->
+    % fetch all chunks
+    [C | _] = ets:match_object(chunks, #chunk{id='$1', ratio=0, _='_'}),
+    [S | _] = C#chunk.storages,
+    % find the actions needed for each and put in Queue
+    io:format("Chunk with no ratio; ~p ~p~n", [C, S]),
+    Action = {delete, C#chunk.id, S},
+    {noreply, State#state{queue=Q++[Action]}, ?INTERVAL};
+
 handle_cast(_Msg, State) ->
-    {noreply, State}.
+    {noreply, State, ?INTERVAL}.
 
 
 %%--------------------------------------------------------------------
@@ -128,9 +141,14 @@ handle_cast(_Msg, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_info(timeout, State = #state{queue=[]}) ->
+    {noreply, State, ?INTERVAL};
+handle_info(timeout, State = #state{queue=[Action | Queue]}) ->
+    action(Action),
+    {noreply, State#state{queue=Queue}, ?INTERVAL};
 handle_info(_Info, State) ->
     io:format("Info ~p~n", [_Info]),
-    {noreply, State}.
+    {noreply, State, ?INTERVAL}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -169,7 +187,12 @@ code_change(_OldVsn, State, _Extra) ->
 %%     State2 = State#state{replicate_queue = Queue},
 %%     add_action(copy, From, Remaining, ChunkId, State2).
 
-%% do_action(Action, _State) ->
+action({delete, ChunkId, StorageUrl}) ->
+    [Storage] = ets:lookup(storages, StorageUrl),
+    gen_server:cast(Storage#storage.pid, {delete, ChunkId});
+
+action(Action) ->
+    io:format("action: ~p~n", [Action]).
 %%     io:format("DO ACTION: ~p~n", [Action]),
 %%     ok.
 

@@ -32,24 +32,8 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {storages = [],  %% Registered storages
-                chunks = []     %% List of {Chunk, RequestedRatio}
+-record(state, {storages = []  %% Registered storages
                }).
-
--record(storage, {
-          url,            % storage URL
-          pid,            % Pid of storage process
-          ref,            % Monitor Reference
-          priority = 100  % Priority of storage
-         }).
-
--record(chunk, {
-          id,           % Chunk ID
-          ratio,        % Maximum Requested chunk ratio by fileservers
-          storages = [] % List of storage URLs where chunk is stored
-        }).
-
-
 
 %%====================================================================
 %% Typedefs
@@ -169,7 +153,8 @@ info() ->
 %% @end
 %%--------------------------------------------------------------------
 init(_Config) ->
-    ets:new(chunks, [ordered_set,protected,named_table,{keypos, 2}]),
+    ets:new(storages, [set,protected,named_table,{keypos, 2}]),
+    ets:new(chunks, [set,protected,named_table,{keypos, 2}]),
     {ok, #state{}}.
 
 %%--------------------------------------------------------------------
@@ -188,61 +173,53 @@ init(_Config) ->
 %%--------------------------------------------------------------------
 handle_call({ read, ChunkId}, From, State) ->
     % Find Chunk information from ChunkId
-    Chunk = lists:keyfind(ChunkId, #chunk.id, State#state.chunks),
-    % Find all storages having this chunk
-    StoragesWithChunk = Chunk#chunk.storages,
-    % Get the Pid of the prefered storage to fetch from
-    StoragePid = choose_storage(ChunkId, StoragesWithChunk,
-                                State#state.storages),
-    % Send a read cast to that storage and return
-    % (the storage will reply with data or error)
-    gen_server:cast(StoragePid, {read, ChunkId, From}),
-    {noreply, State};
+    case ets:lookup(chunks, ChunkId) of
+        [#chunk{storages = StorageUrls}] ->
+            % Get the prefered storage to fetch from
+            case choose_storage(StorageUrls) of
+                #storage{pid = Pid} ->
+                    % Send a read cast to that storage and return
+                    % (the storage will reply with data or error)
+                    gen_server:cast(Pid, {read, ChunkId, From}),
+                    {noreply, State};
+                not_found ->
+                    {reply, {error, unavailible}, State}
+            end;
+        [] ->
+            {reply, {error, not_found}, State}
+    end;
 
 handle_call({ write, ChunkId, Ratio, Data}, _From, State) ->
-    case lists:keysearch(ChunkId, #chunk.id, State#state.chunks) of
-        {value, _} ->
+    case ets:lookup(chunks, ChunkId) of
+        [#chunk{}] ->
             {reply, {error, already_exists}, State};
-        _ ->
-            Storages = choose_write_storages(Ratio, State#state.storages),
+        [] ->
             % store on one server
-            case write_on_one(Storages, ChunkId, Data) of
-                {ok, Storage, Remaining} ->
-                    % Update chunk info
-                    
-                    Chunks = add_storage_to_chunks([ChunkId], Storage#storage.url),
-                    State1 = State#state{chunks = Chunks},
-                    % TODO: Schedule storage on rest
-                    ffs_chunk_replicator:copy(copy, Storage, Remaining, ChunkId),
-                    {reply, ok, State1};
+            case write_to_one(ets:tab2list(storages), ChunkId, Data) of
+                {ok, Storage} ->
+                    ets:insert(chunks, #chunk{id=ChunkId, ratio=Ratio,
+                               storages=[Storage#storage.url]}),
+                    {reply, ok, State};
                 {error, _} = Error ->
                     {reply, Error, State}
             end
     end;
 
 handle_call({ delete, ChunkId}, _From, State) ->
-    % Find Chunk information from ChunkId
-    case lists:keysearch(ChunkId, #chunk.id, State#state.chunks) of
-        false ->
-            Chunks = State#state.chunks,
-            Res = {error, missing};
-        {value, Chunk} ->
-            % Remove from chunklist by setting ratio to 0
-            Chunks = lists:keyreplace(ChunkId, #chunk.id, State#state.chunks,
-                                      Chunk#chunk{ratio=0}),
-            % TODO: Schedule removal from all storages
-            % Right now, remove from all
-            lists:map(fun(#storage{pid = StoragePid}) ->
-                              gen_server:cast(StoragePid, {delete, ChunkId})
-                      end,
-                      get_storage_from_url(Chunk#chunk.storages,
-                                           State#state.storages)),
-            Res = ok
-    end,
-    {reply, Res, State#state{chunks = Chunks}};
+    Res =
+        case ets:update_element(chunks, ChunkId, {#chunk.ratio, 0}) of
+            true ->
+                ok;
+            false ->
+                {error, not_found}
+        end,
+    {reply, Res, State};
 
 handle_call( info, _From, State) ->
-    {reply, State, State};
+    S = ets:tab2list(storages),
+    C = ets:tab2list(chunks),
+    io:format("Storages:~n~p~nChunks:~n~p~n", [S, C]),
+    {reply, ok, State};
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
@@ -259,20 +236,19 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast({update_storage, From, Url, AddedChunkIds, RemovedChunkIds}, State) ->
-    case lists:keymember(From, #storage.pid, State#state.storages) of
-        true ->
+    case ets:lookup(storages, Url) of
+        [#storage{}] ->
             add_storage_to_chunks(AddedChunkIds, Url),
-            remove_storage_from_chunks(RemovedChunkIds, Url),
-            Storages = State#state.storages;
-        false ->
+            remove_storage_from_chunks(RemovedChunkIds, Url);
+        [] ->
             % Monitor that storage if it goes down
             Ref = erlang:monitor(process, From),
             % Add storage information to list of connect storages
-            Storages = [#storage{url = Url, pid = From, ref = Ref} | State#state.storages],
+            ets:insert(storages, #storage{url = Url, pid = From, ref = Ref}),
             % Update handled chunks
             add_storage_to_chunks(AddedChunkIds, Url)
     end,
-    {noreply, State#state{storages = Storages}};
+    {noreply, State};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -289,9 +265,9 @@ handle_cast(_Msg, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info({'DOWN', _Ref, process, Pid, _Reason}, State) ->
-    Storages = lists:keydelete(Pid, #storage.pid, State#state.storages),
+    ets:match_delete(storages, #storage{pid=Pid, _='_'}),
     remove_storage_from_chunks(all, Pid),
-    {noreply, State#state{storages = Storages}};
+    {noreply, State};
 handle_info(_Info, State) ->
     io:format("Info ~p~n", [_Info]),
     {noreply, State}.
@@ -338,8 +314,13 @@ add_storage_to_chunks([], _StorageUrl) ->
 add_storage_to_chunks([ChunkId | R], StorageUrl) ->
     case ets:lookup(chunks, ChunkId) of
         [#chunk{storages = S}] ->
-            ets:update_element(chunks, ChunkId,
-                               {#chunk.storages, S ++ [StorageUrl]});
+            case lists:member(StorageUrl, S) of
+                true -> %already member
+                    ok;
+                false ->
+                    ets:update_element(chunks, ChunkId,
+                                       {#chunk.storages, S ++ [StorageUrl]})
+            end;
         [] ->
             ets:insert(chunks, #chunk{id=ChunkId, storages = [StorageUrl]})
     end,
@@ -372,33 +353,32 @@ remove_storage_from_chunks([ChunkId | R], StorageUrl) ->
     remove_storage_from_chunks(R, StorageUrl).
 
 
-choose_storage(_ChunkId, [], _StorageList) ->
+choose_storage([]) ->
     not_found;
-choose_storage(_ChunkId, [StorageURL | _Rest], StorageList) ->
-    {value, Storage} = lists:keysearch(StorageURL, #storage.url, StorageList),
-    Storage#storage.pid.
-
-choose_write_storages(infinite, StorageList) ->
-    StorageList;
-choose_write_storages(Ratio, StorageList) ->
-    lists:sublist(StorageList, Ratio).
-
-write_on_one([], _ChunkId, _Data) ->
-    {error, failed_to_write};
-write_on_one([#storage{pid = Pid} = S | R], ChunkId, Data) ->
-    case gen_server:call(Pid, {write, ChunkId, Data}) of
-        ok -> {ok, S, R};
-        _ ->
-            % Failed to store data, try store on next
-            write_on_one(R, ChunkId, Data)
+choose_storage([StorageUrl | Rest]) ->
+    case ets:lookup(storages, StorageUrl) of
+        [S = #storage{}] -> S;
+        [] ->
+            % Storage not connected
+            choose_storage(Rest)
     end.
 
-get_storage_from_url([], _Storages) ->
-    [];
-get_storage_from_url([Url | R], Storages) ->
-    case lists:keysearch(Url, #storage.url, Storages) of
-        {value, Storage} ->
-            [Storage | get_storage_from_url(R, Storages)];
-        false ->
-            get_storage_from_url(R, Storages)
+choose_write_storage([]) -> no_storage;
+choose_write_storage(Storages) ->
+    lists:nth(random:uniform(length(Storages)), Storages).
+
+write_to_one([], _ChunkId, _Data) ->
+    {error, failed_to_write};
+write_to_one(Storages, ChunkId, Data) ->
+    case choose_write_storage(Storages) of
+        no_storage -> {error, failed_to_write};
+        S ->
+            case gen_server:call(S#storage.pid, {write, ChunkId, Data}) of
+                ok ->
+                    {ok, S};
+                _ ->
+                    % Failed to store data, try store on next
+                    S2 = lists:delete(S, Storages),
+                    write_to_one(S2, ChunkId, Data)
+            end
     end.
