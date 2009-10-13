@@ -22,7 +22,7 @@
 
 %% Storage API
 -export([read/1, write/2, write/3, delete/1]).
--export([register_storage/3, update_storage/4]).
+-export([update_storage/4]).
 -export([info/0]).
 
 
@@ -34,7 +34,7 @@
 
 -record(state, {storages = [],  %% Registered storages
                 chunks = []     %% List of {Chunk, RequestedRatio}
-                }).
+               }).
 
 -record(storage, {
           url,            % storage URL
@@ -45,9 +45,11 @@
 
 -record(chunk, {
           id,           % Chunk ID
-          ratio = 1,    % Maximum Requested chunk ratio by fileservers
+          ratio,        % Maximum Requested chunk ratio by fileservers
           storages = [] % List of storage URLs where chunk is stored
         }).
+
+
 
 %%====================================================================
 %% Typedefs
@@ -60,6 +62,10 @@
 %% @end
 %% @type storage_url() = string().
 %%     The url that this storage is connected to.
+%% @end
+%% @type action() = tuple().
+%%     An action for the replication system
+%%     {copy, StorageUrl, Chunk, TargetStorageUrl}
 %% @end
 
 
@@ -126,17 +132,6 @@ delete(ChunkId) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%%   Used by storages to register themselves in the chunk server
-%%
-%% @spec
-%%   register_storage(storage_url(), pid(), [chunk_id()]) -> ok
-%% @end
-%%--------------------------------------------------------------------
-register_storage(Url, Pid, ChunkIds) ->
-    gen_server:cast(?SERVER, {update_storage, Pid, Url, ChunkIds, []}).
-
-%%--------------------------------------------------------------------
-%% @doc
 %%   Used by storages to update their status
 %%
 %% @spec
@@ -174,7 +169,7 @@ info() ->
 %% @end
 %%--------------------------------------------------------------------
 init(_Config) ->
-    process_flag(trap_exit, true),
+    ets:new(chunks, [ordered_set,protected,named_table,{keypos, 2}]),
     {ok, #state{}}.
 
 %%--------------------------------------------------------------------
@@ -212,10 +207,13 @@ handle_call({ write, ChunkId, Ratio, Data}, _From, State) ->
             Storages = choose_write_storages(Ratio, State#state.storages),
             % store on one server
             case write_on_one(Storages, ChunkId, Data) of
-                {ok, Storage, _Remaining} ->
+                {ok, Storage, Remaining} ->
                     % Update chunk info
-                    State1 = add_storage_to_chunks(State#state.chunks, [ChunkId], Storage),
+                    
+                    Chunks = add_storage_to_chunks([ChunkId], Storage#storage.url),
+                    State1 = State#state{chunks = Chunks},
                     % TODO: Schedule storage on rest
+                    ffs_chunk_replicator:copy(copy, Storage, Remaining, ChunkId),
                     {reply, ok, State1};
                 {error, _} = Error ->
                     {reply, Error, State}
@@ -263,8 +261,8 @@ handle_call(_Request, _From, State) ->
 handle_cast({update_storage, From, Url, AddedChunkIds, RemovedChunkIds}, State) ->
     case lists:keymember(From, #storage.pid, State#state.storages) of
         true ->
-            Chunks0 = remove_storage_from_chunks(State#state.chunks, RemovedChunkIds, Url),
-            Chunks = add_storage_to_chunks(Chunks0, AddedChunkIds, Url),
+            add_storage_to_chunks(AddedChunkIds, Url),
+            remove_storage_from_chunks(RemovedChunkIds, Url),
             Storages = State#state.storages;
         false ->
             % Monitor that storage if it goes down
@@ -272,9 +270,9 @@ handle_cast({update_storage, From, Url, AddedChunkIds, RemovedChunkIds}, State) 
             % Add storage information to list of connect storages
             Storages = [#storage{url = Url, pid = From, ref = Ref} | State#state.storages],
             % Update handled chunks
-            Chunks = add_storage_to_chunks(State#state.chunks, AddedChunkIds, Url)
+            add_storage_to_chunks(AddedChunkIds, Url)
     end,
-    {noreply, State#state{storages = Storages, chunks = Chunks}};
+    {noreply, State#state{storages = Storages}};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -292,8 +290,8 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info({'DOWN', _Ref, process, Pid, _Reason}, State) ->
     Storages = lists:keydelete(Pid, #storage.pid, State#state.storages),
-    Chunks = remove_storage_from_chunks(State#state.chunks, all, Pid),
-    {noreply, State#state{storages = Storages, chunks = Chunks}};
+    remove_storage_from_chunks(all, Pid),
+    {noreply, State#state{storages = Storages}};
 handle_info(_Info, State) ->
     io:format("Info ~p~n", [_Info]),
     {noreply, State}.
@@ -326,61 +324,52 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%==================================================================
-%find_module(Url) ->
-%    {Scheme, _Rest} = friendfs_lib:urlsplit_scheme(Url),
-%    find_module_by_scheme(Scheme).
-
-%find_module_by_scheme(local) ->
-%    ffs_storage_file;
-%find_module_by_scheme(ram) ->
-%    ffs_storage_mem;
-%find_module_by_scheme(Type) ->
-%    throw({no_storage_module_availible, Type}).
-
-%find_storage(Url, []) ->
-%    throw({storage_module_missing, Url});
-%find_storage(Url, [Storage = #storage{url = Url} | _]) ->
-%    Storage;
-%find_storage(Url, [_ | R]) ->
-%    find_storage(Url, R).
-
-
 
 %%--------------------------------------------------------------------
-%% @private
 %% @doc
-%% Adds the Pid in the list of storages for each chunk in Chunklist
+%% Adds the Storage (URL) in the list of storages for each chunk in Chunklist
 %%
-%% @spec add_storage_to_chunks(list(), list(), tuple()) -> list()
+%% @spec add_storage_to_chunks(AllChunks, ChunksInThisStore, Storage) -> list()
 %% @end
 %%--------------------------------------------------------------------
-add_storage_to_chunks([], [], _Storage) ->
-    [];
-add_storage_to_chunks([], [StorageChunkId | R], Storage) ->
-    [#chunk{id=StorageChunkId, storages=[Storage]} |
-    add_storage_to_chunks([], R, Storage)];
-add_storage_to_chunks([Chunk | R], StorageChunkIds, Storage) ->
-    case lists:member(Chunk#chunk.id, StorageChunkIds) of
-        true ->
-            [Chunk#chunk{storages = [Storage | Chunk#chunk.storages]} |
-             add_storage_to_chunks(R, StorageChunkIds -- [Chunk#chunk.id], Storage)];
-        false ->
-            [Chunk | add_storage_to_chunks(R, StorageChunkIds, Storage)]
-    end.
 
-remove_storage_from_chunks([], _StorageChunkIds, _Storage) ->
+add_storage_to_chunks([], _StorageUrl) ->
     [];
-remove_storage_from_chunks([Chunk | R], all, Storage) ->
-    [Chunk#chunk{storages = Chunk#chunk.storages -- [Storage]} |
-     remove_storage_from_chunks(R, all, Storage)];
-remove_storage_from_chunks([Chunk | R], StorageChunkIds, Storage) ->
-    case lists:member(Chunk#chunk.id, StorageChunkIds) of
-        true ->
-            [Chunk#chunk{storages = Chunk#chunk.storages -- [Storage]} |
-             remove_storage_from_chunks(R, StorageChunkIds, Storage)];
-        false ->
-            [Chunk | remove_storage_from_chunks(R, StorageChunkIds, Storage)]
-    end.
+add_storage_to_chunks([ChunkId | R], StorageUrl) ->
+    case ets:lookup(chunks, ChunkId) of
+        [#chunk{storages = S}] ->
+            ets:update_element(chunks, ChunkId,
+                               {#chunk.storages, S ++ [StorageUrl]});
+        [] ->
+            ets:insert(chunks, #chunk{id=ChunkId, storages = [StorageUrl]})
+    end,
+    add_storage_to_chunks(R, StorageUrl).
+
+remove_storage_from_chunks([], _StorageUrl) ->
+    [];
+remove_storage_from_chunks(all, StorageUrl) ->
+    Chunks = ets:tab2list(chunks),
+    lists:map(
+      fun(#chunk{id=ChunkId, storages=S}) ->
+              case lists:member(StorageUrl, S) of
+                  true ->
+                      S2= lists:delete(StorageUrl, S),
+                      ets:update_element(chunks, ChunkId,
+                                         {#chunk.storages, S2});
+                  false ->
+                       ok
+              end
+      end, Chunks);
+remove_storage_from_chunks([ChunkId | R], StorageUrl) ->
+    case ets:lookup(chunks, ChunkId) of
+        [#chunk{storages = S}] ->
+            Storages = lists:delete(StorageUrl, S),
+            ets:update_element(chunks, ChunkId,
+                               {#chunk.storages, Storages});
+        [] ->
+            ok
+    end,
+    remove_storage_from_chunks(R, StorageUrl).
 
 
 choose_storage(_ChunkId, [], _StorageList) ->
