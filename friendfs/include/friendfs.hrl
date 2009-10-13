@@ -74,3 +74,18 @@
 -define(TOT_MEM,tot_mem).
 -define(FREE_MEM,free_mem).
 -define(FREE_INODES,free_inodes).
+
+-record(chunk, {
+          id,           % Chunk ID
+          ratio,        % Maximum Requested chunk ratio by fileservers
+          storages = [] % List of storage URLs where chunk is stored
+        }).
+
+
+-record(storage, {
+          url,            % storage URL
+          pid,            % Pid of storage process
+          ref,            % Monitor Reference
+          priority = 100  % Priority of storage
+         }).
+
