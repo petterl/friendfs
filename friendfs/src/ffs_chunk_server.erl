@@ -83,10 +83,10 @@ read(ChunkId) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Read data from a chunk from any storage
-%% Respond by calling callback function with M:F(Response, A)
+%% Respond by calling the callback function with the response
 %%
 %% @spec
-%%   read_async(ChunkId :: chunk_id(), Fun :: {M,F,A}) -> ok
+%%   read_async(ChunkId :: chunk_id(), Fun :: fun()) -> ok
 %%     Response = {ok, Data} | {error, Reason}
 %%     Reason   = enoent | eacces | eisdir | enotdir | enomem | atom()
 %% @end
@@ -308,7 +308,7 @@ handle_call(_Request, _From, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({ read_async, ChunkId, {M,F,A}}, State) ->
+handle_cast({ read_async, ChunkId, Fun}, State) ->
     % Find Chunk information from ChunkId
     case ets:lookup(chunks, ChunkId) of
         [#chunk{storages = StorageUrls}] ->
@@ -317,12 +317,12 @@ handle_cast({ read_async, ChunkId, {M,F,A}}, State) ->
                 #storage{pid = Pid} ->
                     % Send a read cast to that storage and return
                     % (the storage will reply with data or error)
-                    gen_server:cast(Pid, {read_async, ChunkId, {M,F,A}});
+                    gen_server:cast(Pid, {read_async, ChunkId, Fun});
                 not_found ->
-                    M:F({error, enoent}, A)
+                    Fun({error, enoent})
             end;
         [] ->
-            M:F({error, enoent}, A)
+            Fun({error, enoent})
     end,
     {noreply, State};
 
