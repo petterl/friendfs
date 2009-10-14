@@ -4,8 +4,6 @@ TEST_DIR=../tests
 ROOTDIR=../..
 DBG_DIR=dbg/
 ERL_CALL=erl_call
-ERL_COMPILE_FLAGS += 
-
 ERL_COMPILE_FLAGS += -I$(INCLUDE) +warn_unused_vars +nowarn_shadow_vars +warn_unused_import +debug_info
 
 INCLUDES=$(wildcard $(INCLUDE)/*.hrl)
