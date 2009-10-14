@@ -31,7 +31,8 @@
 	 set_xattr/4,
 	 delete_xattr/3,
 	 write_cache/4,
-	 flush_cache/2
+	 flush_cache/2,
+	 read/4
 ]).
 
 -include_lib("friendfs/include/friendfs.hrl").
@@ -491,30 +492,30 @@ delete_xattr(#ffs_tid{}, _Inode, _Key) ->
 %% @end
 %%--------------------------------------------------------------------
 write_cache(Tid,InodeI,AppendData,Offset) ->
-	write_cache(Tid,InodeI,AppendData,Offset,[]).
+    write_cache(Tid,InodeI,AppendData,Offset,[]).
 write_cache(Tid,InodeI,AppendData,Offset,Acc) ->
-	ChunkSize = ffs_lib:get_value(chunk_size,Tid#ffs_tid.config),
-	Inode = lookup(Tid,InodeI),
-	NewData = case Inode of
-				#ffs_inode{ write_cache = undefined } when (Offset rem ChunkSize) == 0 ->
-					AppendData;
-				#ffs_inode{ write_cache = OldData } when size(OldData) == (Offset rem ChunkSize) ->
-					<<OldData/binary,AppendData/binary>>
-			end,
-	io:format("Size of data is ~p\n",[size(NewData)]),
-	NewInode = Inode#ffs_inode{ size = size(AppendData) + Inode#ffs_inode.size },
-	if 
-		size(NewData) > ChunkSize ->
-			<<FirstChunk:ChunkSize/binary,Rest/binary>> = NewData,
-			Chunk = flush_cache(Tid,NewInode#ffs_inode{ write_cache = FirstChunk }),
-			write_cache(Tid,InodeI,Rest,Offset+ChunkSize,[Chunk|Acc]);
-		size(NewData) == ChunkSize ->
-			Chunk = flush_cache(Tid,NewInode#ffs_inode{ write_cache = NewData }),
-			[Chunk|Acc];
-		true ->
-			ets:insert(Tid#ffs_tid.inode,NewInode#ffs_inode{ write_cache = NewData }),
-			Acc
-	end.
+    ChunkSize = ffs_lib:get_value(chunk_size,Tid#ffs_tid.config),
+    Inode = lookup(Tid,InodeI),
+    NewData = case Inode of
+		  #ffs_inode{ write_cache = undefined } when (Offset rem ChunkSize) == 0 ->
+		      AppendData;
+		  #ffs_inode{ write_cache = OldData } when size(OldData) == (Offset rem ChunkSize) ->
+		      <<OldData/binary,AppendData/binary>>
+			  end,
+    io:format("Size of data is ~p\n",[size(NewData)]),
+    NewInode = Inode#ffs_inode{ size = size(AppendData) + Inode#ffs_inode.size },
+    if 
+	size(NewData) > ChunkSize ->
+	    <<FirstChunk:ChunkSize/binary,Rest/binary>> = NewData,
+	    Chunk = flush_cache(Tid,NewInode#ffs_inode{ write_cache = FirstChunk }),
+	    write_cache(Tid,InodeI,Rest,Offset+ChunkSize,[Chunk|Acc]);
+	size(NewData) == ChunkSize ->
+	    Chunk = flush_cache(Tid,NewInode#ffs_inode{ write_cache = NewData }),
+	    [Chunk|Acc];
+	true ->
+	    ets:insert(Tid#ffs_tid.inode,NewInode#ffs_inode{ write_cache = NewData }),
+	    Acc
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -527,18 +528,49 @@ write_cache(Tid,InodeI,AppendData,Offset,Acc) ->
 %% @end
 %%--------------------------------------------------------------------
 flush_cache(Tid,InodeI) when is_integer(InodeI) ->
-	flush_cache(Tid,lookup(Tid,InodeI));
+    flush_cache(Tid,lookup(Tid,InodeI));
 flush_cache(_Tid,#ffs_inode{ write_cache = undefined }) ->
-	empty;
+    empty;
 flush_cache(Tid,#ffs_inode{ write_cache = Data } = Inode) ->
-	{M,F} = ffs_lib:get_value(chunkid_mfa,Tid#ffs_tid.config),
-	ChunkId = M:F(Data),
-	NewInode = Inode#ffs_inode{ chunkids = [ChunkId|Inode#ffs_inode.chunkids],
-								write_cache = undefined },
-	ets:insert(Tid#ffs_tid.inode,NewInode),
-	{chunk,ChunkId,Data};
+    {M,F} = ffs_lib:get_value(chunkid_mfa,Tid#ffs_tid.config),
+    ChunkId = M:F(Data),
+    NewInode = Inode#ffs_inode{ chunkids = [ChunkId|Inode#ffs_inode.chunkids],
+				write_cache = undefined },
+    ets:insert(Tid#ffs_tid.inode,NewInode),
+    {chunk,ChunkId,Data};
 flush_cache(_Tid,Else) ->
-	Else.
+    Else.
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Description	
+%%
+%% @spec
+%%   read(Tid,InodeI,Size,Offset) -> {NewOffset,ChunkIds}
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
+%%      NewOffset = integer()
+%%      ChunkIds = [{chunk,ChunkId}] | []
+%% @end
+%%--------------------------------------------------------------------
+read(Tid,InodeI,Size,Offset) ->
+    ChunkSize = ffs_lib:get_value(chunk_size,Tid#ffs_tid.config),
+    StartChunk = Offset div ChunkSize,
+    EndChunk = (Size+(Offset rem ChunkSize)-1) div ChunkSize,
+    Inode = lookup(Tid,InodeI),
+    {Offset rem ChunkSize,
+     read_chunks(0,StartChunk,EndChunk,Inode#ffs_inode.chunkids)}.
+
+
+read_chunks(Current,Current,Current,[H|_T]) ->
+    [{chunk,H}];
+read_chunks(Current,Current,EndChunk,[H|T]) ->
+    [{chunk,H}|read_chunks(Current+1,Current+1,EndChunk,T)];
+read_chunks(Current,StartChunk,EndChunk,[_H|T]) ->
+    read_chunks(Current+1,StartChunk,EndChunk,T);
+read_chunks(_Current,_StartChunk,_EndChunk,[]) ->
+    [].
 
 %%====================================================================
 %% Internal functions

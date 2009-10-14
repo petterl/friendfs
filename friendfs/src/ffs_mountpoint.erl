@@ -55,6 +55,9 @@
 	  write/7
 	]).
 
+%% friendfs callbacks
+-export([read_reply/2]).
+
 -record(state,{ filesystem }).
 
 -define(DBG(Str), io:format("Ctx = ~p\n"++Str++"\n",[Ctx])).
@@ -343,12 +346,15 @@ mknod(Ctx, _ParentInode, _Name, _Mode, _Dev, _Cont, _State) -> ?DBG("mknod calle
 %% open_async_reply ().
 %% @end
 
-open(Ctx, _Inode, _Fi, _Cont, State) -> ?DBG("open called"),
-  {#fuse_reply_open{ fuse_file_info = #fuse_file_info{flags = 66,
-                                                       writepage = false,
-													   direct_io = false,
-													   keep_cache = false,
-                                                       flush = false,fh = 0,lock_owner = 0} },State}.
+open(Ctx, _Inode, _Fi, _Cont, State) ->
+    ?DBG("open called"),
+    {#fuse_reply_open{ fuse_file_info = #fuse_file_info{flags = 66,
+							writepage = false,
+							direct_io = false,
+							keep_cache = false,
+							flush = false,
+							fh = 0,
+							lock_owner = 0} },State}.
 
 %% @spec opendir(Ctx::#fuseCtx{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { opendir_async_reply (), NewState } | { noreply, NewState }
 %%   opendir_async_reply () = #fuse_reply_open{} | #fuse_reply_err{}
@@ -358,7 +364,7 @@ open(Ctx, _Inode, _Fi, _Cont, State) -> ?DBG("open called"),
 %% @end
 
 opendir(Ctx, _Inode, Fi, _Cont, State) ->
-	    ?DBG("opendir called"),
+    ?DBG("opendir called"),
     {#fuse_reply_open{ fuse_file_info = Fi},State}.
 
 %% @spec read(Ctx::#fuseCtx{}, Inode::integer (), Size::integer (), Offset::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { read_async_reply (), NewState } | { noreply, NewState }
@@ -369,8 +375,15 @@ opendir(Ctx, _Inode, Fi, _Cont, State) ->
 %% and the second argument of type read_async_reply ().
 %% @end
 
-read(Ctx, _Inode, _Size, _Offset, _Fi, _Cont, _State) -> ?DBG("read called"),
-  erlang:throw (not_implemented).
+read(Ctx, InodeI, Size, Offset, Fi, Cont, State) ->
+    ?DBG("read called"),
+    ffs_filesystem:read(State#state.filesystem, InodeI, Size, Offset,
+			{ffs_mountpoint,read_reply,{InodeI,Size,Offset,Cont}}),
+    {noreply,State}.
+
+read_reply(Data,{_InodeI,_Size,_Offset,Cont}) ->
+    fuserlsrv:reply(Cont, #fuse_reply_buf{ buf = Data,
+					   size = size(Data) }).
 
 %% @spec readdir(Ctx::#fuseCtx{}, Inode::integer (), Size::integer (), Offset::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { readdir_async_reply (), NewState } | { noreply, NewState }
 %%   readdir_async_reply () = #fuse_reply_direntrylist{} | #fuse_reply_err{}
