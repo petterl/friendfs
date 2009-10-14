@@ -22,7 +22,7 @@
 
 %% Storage API
 -export([read/1, read_async/2, write/2, write/3, delete/1, delete/2]).
--export([write_replicate/2, update_storage/4]).
+-export([write_replicate/2, update_storage/3]).
 -export([info/0]).
 
 %% gen_server callbacks
@@ -168,8 +168,8 @@ delete(ChunkId, StorageUrl) ->
 %%   update_storage(storage_url(), pid(), [chunk_id()], [chunk_id()]) -> ok
 %% @end
 %%--------------------------------------------------------------------
-update_storage(Url, Pid, Added, Removed) ->
-    gen_server:cast(?SERVER, {update_storage, Pid, Url, Added, Removed}).
+update_storage(Url, Pid, ChunkIds) ->
+    gen_server:cast(?SERVER, {update_storage, Pid, Url, ChunkIds}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -269,6 +269,8 @@ handle_call({ write_replicate, ChunkId, Data}, _From, State) ->
                     S = choose_write_storage(Remaining),
                     io:format("Replicate ~p to ~p~n", [ChunkId, S#storage.url]),
                     Res = gen_server:call(S#storage.pid, {write, ChunkId, Data}),
+                    ets:update_element(chunks, ChunkId,
+                                       {#chunk.storages, StorageUrls ++ [S#storage.url]}),
                     {reply, Res, State}
             end;
         [#chunk{}] ->
@@ -327,28 +329,72 @@ handle_cast({ read_async, ChunkId, Fun}, State) ->
     {noreply, State};
 
 handle_cast({ delete, ChunkId, StorageUrl}, State) ->
-    case ets:lookup(storages, StorageUrl) of
-        [S = #storage{}] ->
-            gen_server:cast(S#storage.pid, {delete, ChunkId});
+    case ets:lookup(chunks, ChunkId) of
+        [#chunk{storages = StorageUrls}] ->
+            case ets:lookup(storages, StorageUrl) of
+                [S = #storage{}] ->
+                    gen_server:cast(S#storage.pid, {delete, ChunkId}),
+                    ets:update_element(chunks, ChunkId,
+                                       {#chunk.storages,
+                                        StorageUrls -- [S#storage.url]});
+                [] ->
+                    % Error: Storage missing, ignore
+                    ok
+            end;
         [] ->
+            % Error: Chunk missing, ignore
             ok
     end,
     {noreply, State};
 
-handle_cast({update_storage, From, Url, AddedChunkIds, RemovedChunkIds}, State) ->
+handle_cast({update_storage, From, Url, ChunkIds}, State) ->
     case ets:lookup(storages, Url) of
         [#storage{}] ->
-            add_storage_to_chunks(AddedChunkIds, Url),
-            remove_storage_from_chunks(RemovedChunkIds, Url),
-            delete_unused_chunks(),
-            ffs_chunk_replicator:refresh();
+            Updated =
+                ets:foldl(
+                  fun(#chunk{id = ChunkId, storages=StorageUrls}, Acc) ->
+                          case lists:member(ChunkId, ChunkIds) of
+                              true ->
+                                  % Chunk in this storage
+                                  case lists:member(Url, StorageUrls) of
+                                      true ->
+                                          Acc;
+                                      false ->
+                                          % Added
+                                          ets:update_element(chunks, ChunkId,
+                                                             {#chunk.storages, StorageUrls ++ [Url]}),
+                                          true
+                                  end;
+                              false ->
+                                  % chunk not in storage
+                                  case lists:member(Url, StorageUrls) of
+                                      true ->
+                                          % Removed
+                                          ets:update_element(chunks, ChunkId,
+                                                             {#chunk.storages, StorageUrls -- [Url]}),
+                                          true;
+                                      false ->
+                                          Acc
+                                  end
+                          end
+                  end,
+                  false, chunks),
+            case Updated of
+                true ->
+                    ffs_chunk_replicator:refresh();
+                false ->
+                    ok
+            end;
+%                    add_storage_to_chunks(AddedChunkIds, Url),
+%            remove_storage_from_chunks(RemovedChunkIds, Url),
+
         [] ->
             % Monitor that storage if it goes down
             Ref = erlang:monitor(process, From),
             % Add storage information to list of connect storages
             ets:insert(storages, #storage{url = Url, pid = From, ref = Ref}),
             % Update handled chunks
-            add_storage_to_chunks(AddedChunkIds, Url)
+            add_storage_to_chunks(ChunkIds, Url)
     end,
     {noreply, State};
 

@@ -18,7 +18,7 @@
          terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE).
--define(REFRESH_INTERVAL, 5000).
+-define(REFRESH_INTERVAL, 10000).
 
 -record(state,
 	{url,         % URL in config file
@@ -80,8 +80,14 @@ handle_call(list, _From, State) ->
     Res = file:list_dir(State#state.path),
     {reply, Res, State, ?REFRESH_INTERVAL};
 
-handle_call({write, Path, Data}, _From, State) ->
-    Result = file:write_file(join(State#state.path, Path),Data),
+handle_call({write, Cid, Data}, _From, State0) ->
+    {Result, State} =
+        case file:write_file(join(State0#state.path, Cid),Data) of
+            ok ->
+                {ok, State0#state{chunks = State0#state.chunks ++ [Cid]}};
+            {error, _} = Err ->
+                {Err, State0}
+        end,
     {reply, Result, State, ?REFRESH_INTERVAL};
 
 handle_call(refresh, _From, State) ->
@@ -103,9 +109,15 @@ handle_call(info, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({delete, Cid}, State) ->
+handle_cast({delete, Cid}, State0) ->
     % Delete file from dir
-    file:delete(join(State#state.path, Cid)),
+    State = 
+        case file:delete(join(State0#state.path, Cid)) of
+            ok ->
+                State0#state{chunks = State0#state.chunks -- Cid};
+            {error, _} ->
+                State0
+        end,
     {noreply, State, ?REFRESH_INTERVAL};
 
 handle_cast({read, Path, From}, State) ->
@@ -176,11 +188,5 @@ join(Path, Filename) ->
 
 refresh_storage(State) ->
     {ok, Files} = file:list_dir(State#state.path),
-    Added = lists:subtract(Files, State#state.chunks),
-    Removed = lists:subtract(State#state.chunks, Files),
-    case {Added, Removed} of
-        {[],[]} -> ok;
-        _ ->
-            ffs_chunk_server:update_storage(State#state.url, self(), Added, Removed)
-    end,
+    ffs_chunk_server:update_storage(State#state.url, self(), Files),
     State#state{chunks = Files}.
