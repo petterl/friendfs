@@ -24,7 +24,7 @@
 	 write/4,
 	 flush/2,
 	 delete/3,
-	 make_dir/2,
+	 make_dir/4,
 	 lookup/2,
 	 find/3,
 	 get_config/1,
@@ -75,11 +75,11 @@ list(Name,INodeI) ->
 %% Read a chunk from a storage
 %%
 %% @spec
-%%   read(Name,Inode,Size,Offset,ReadCB) -> ok | {error, Error}
+%%   read(Name,Inode,Size,Offset,ReadCBFun) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-read(Name, Inode, Size, Offset, ReadCB) ->
-    gen_server:cast(Name, {read, Inode, Size, Offset, ReadCB}).
+read(Name, Inode, Size, Offset, ReadCBFun) ->
+    gen_server:cast(Name, {read, Inode, Size, Offset, ReadCBFun}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -136,8 +136,8 @@ delete(SrvName, ParentI,Name) ->
 %%   make_dir(Name,Path) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-make_dir(Name, Path) ->
-    gen_server:call(Name, {make_dir, Path}).
+make_dir(SrvName, ParentInodeI, Name, Mode) ->
+    gen_server:call(SrvName, {make_dir, ParentInodeI,Name,Mode}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -278,6 +278,15 @@ handle_call({flush,InodeI}, _From, State) ->
 			ok
 	end,
 	{reply,ok,State};
+handle_call({make_dir, ParentI, Name, Mode}, _From, State) ->
+
+    Parent = ffs_fat:lookup(State#state.fat,ParentI),
+
+    #ffs_inode{ gid = Gid, uid = Uid} = Parent,
+    
+    NewInode = ffs_fat:make_dir(State#state.fat,ParentI, Name, Uid, Gid, Mode),
+    
+    {reply,NewInode,State};
 handle_call(_Request, _From, State) ->
 
     Reply = ok,
@@ -293,10 +302,10 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({read,InodeI,Size,Offset,MFA},State) ->
+handle_cast({read,InodeI,Size,Offset,Fun},State) ->
     {NewOffset,ChunkIds} = ffs_fat:read(State#state.fat,InodeI,Size,Offset),
 
-    read_reply({ok,<<>>},{<<>>,ChunkIds,NewOffset,MFA}),
+    read_reply({ok,<<>>},{<<>>,ChunkIds,NewOffset,Fun}),
     {noreply,State};
 handle_cast(_Msg, State) ->
     io:format("~p: Unknown handle_cast(~p,~p) call\n",[?MODULE,_Msg,State]),
@@ -350,23 +359,25 @@ store_chunk(ChunkId,Data,_Config) ->
 	ffs_chunk_server:write(ChunkId,Data),
 	ok.
 
-read_reply({ok,<<Data/binary>>},{<<Acc/binary>>,[],Offset,{M,F,A}}) ->
+read_reply({ok,<<Data/binary>>},{<<Acc/binary>>,[],Offset,Fun}) ->
 
     %% Remove offset data
     <<_Head:Offset/binary,NewAcc/binary>> = Acc,
     
-    M:F(<<NewAcc/binary,Data/binary>>,A);
+    Fun(<<NewAcc/binary,Data/binary>>);
 read_reply({ok,<<Data/binary>>},
 	   {<<Acc/binary>>,
 	    [{chunk,ChunkId}|T],
 	    Offset,
-	    MFA}) ->
+	    Fun}) ->
     NewAcc = <<Acc/binary,Data/binary>>,
     
-    ffs_chunk_server:read_async(ChunkId,{ffs_filesystem,
-					 read_reply,{NewAcc,T,Offset,MFA}});
-read_reply({error,Error},{_Acc,_Chunks,_Offset,{M,F,A}}) ->
-    M:F({error,Error},A).
+    ffs_chunk_server:read_async(
+      ChunkId,fun(Data) ->
+		      read_reply(Data,{NewAcc,T,Offset,Fun})
+	      end);
+read_reply({error,Error},{_Acc,_Chunks,_Offset,Fun}) ->
+    Fun({error,Error}).
 
 
 
