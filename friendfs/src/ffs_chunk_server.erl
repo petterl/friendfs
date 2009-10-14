@@ -308,7 +308,7 @@ handle_call(_Request, _From, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({ read, ChunkId, {M,F,A}}, State) ->
+handle_cast({ read_async, ChunkId, {M,F,A}}, State) ->
     % Find Chunk information from ChunkId
     case ets:lookup(chunks, ChunkId) of
         [#chunk{storages = StorageUrls}] ->
