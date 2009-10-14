@@ -113,6 +113,13 @@ handle_cast({read, Path, From}, State) ->
     Res = file:read_file(join(State#state.path, Path)),
     % Send it to requesting process
     gen_server:reply(From, Res),
+    {noreply, State, ?REFRESH_INTERVAL};
+
+handle_cast({read_async, Path, {M,F,A}}, State) ->
+    % Read data from file
+    Res = file:read_file(join(State#state.path, Path)),
+    % Send it to requesting process
+    M:F(Res, A),
     {noreply, State, ?REFRESH_INTERVAL}.
 
 %%--------------------------------------------------------------------

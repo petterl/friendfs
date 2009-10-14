@@ -21,7 +21,7 @@
 -export([start/1]).
 
 %% Storage API
--export([read/1, write/2, write/3, delete/1, delete/2]).
+-export([read/1, read_async/2, write/2, write/3, delete/1, delete/2]).
 -export([write_replicate/2, update_storage/4]).
 -export([info/0]).
 
@@ -73,12 +73,27 @@ start(Config) ->
 %% Read data from a chunk from any storage
 %%
 %% @spec
-%%   read(ChunkId :: chunk_id()) -> ok | {error, Reason}
+%%   read(ChunkId :: chunk_id()) -> {ok, Data} | {error, Reason}
 %%     Reason = enoent | eacces | eisdir | enotdir | enomem | atom()
 %% @end
 %%--------------------------------------------------------------------
 read(ChunkId) ->
     gen_server:call(?SERVER, {read, ChunkId}).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Read data from a chunk from any storage
+%% Respond by calling callback function with M:F(Response, A)
+%%
+%% @spec
+%%   read_async(ChunkId :: chunk_id(), Fun :: {M,F,A}) -> ok
+%%     Response = {ok, Data} | {error, Reason}
+%%     Reason   = enoent | eacces | eisdir | enotdir | enomem | atom()
+%% @end
+%%--------------------------------------------------------------------
+read_async(ChunkId, Fun) ->
+    gen_server:cast(?SERVER, {read_async, ChunkId, Fun}).
+
 
 %% --------------------------------------------------------------------
 %% @equiv write(ChunkId, Data, infinite)
@@ -214,10 +229,10 @@ handle_call({ read, ChunkId}, From, State) ->
                     gen_server:cast(Pid, {read, ChunkId, From}),
                     {noreply, State};
                 not_found ->
-                    {reply, {error, unavailible}, State}
+                    {reply, {error, enoent}, State}
             end;
         [] ->
-            {reply, {error, not_found}, State}
+            {reply, {error, enoent}, State}
     end;
 
 handle_call({ write, ChunkId, Ratio, Data}, _From, State) ->
@@ -293,6 +308,24 @@ handle_call(_Request, _From, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast({ read, ChunkId, {M,F,A}}, State) ->
+    % Find Chunk information from ChunkId
+    case ets:lookup(chunks, ChunkId) of
+        [#chunk{storages = StorageUrls}] ->
+            % Get the prefered storage to fetch from
+            case choose_storage(StorageUrls) of
+                #storage{pid = Pid} ->
+                    % Send a read cast to that storage and return
+                    % (the storage will reply with data or error)
+                    gen_server:cast(Pid, {read_async, ChunkId, {M,F,A}});
+                not_found ->
+                    M:F({error, enoent}, A)
+            end;
+        [] ->
+            M:F({error, enoent}, A)
+    end,
+    {noreply, State};
+
 handle_cast({ delete, ChunkId, StorageUrl}, State) ->
     case ets:lookup(storages, StorageUrl) of
         [S = #storage{}] ->
