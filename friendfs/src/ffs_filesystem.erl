@@ -36,6 +36,9 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
+%% Filesystem callbacks
+-export([read_reply/2]).
+
 -define(SERVER, ?MODULE).
 
 -record(state, {name, fat, stats, config}).
@@ -290,20 +293,11 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({read,InodeI,Size,Offset,{M,F,A}},State) ->
+handle_cast({read,InodeI,Size,Offset,MFA},State) ->
     {NewOffset,ChunkIds} = ffs_fat:read(State#state.fat,InodeI,Size,Offset),
-    ChunkData = lists:foldl(
-		  fun({chunk,ChunkId},<<Acc/binary>>) ->
-			  {ok,<<Data/binary>>} = ffs_chunk_server:read(ChunkId),
-			  <<Acc/binary,Data/binary>>
-		  end,<<"">>,ChunkIds),
 
-    %% Remove data before offset
-    <<_Head:NewOffset/binary, Rest/binary>> = ChunkData,
-
-    apply(M,F,[Rest,A]),
-							     
-    {noreply, State};
+    read_reply({ok,<<>>},{<<>>,ChunkIds,NewOffset,MFA}),
+    {noreply,State};
 handle_cast(_Msg, State) ->
     io:format("~p: Unknown handle_cast(~p,~p) call\n",[?MODULE,_Msg,State]),
     {noreply, State}.
@@ -356,131 +350,23 @@ store_chunk(ChunkId,Data,_Config) ->
 	ffs_chunk_server:write(ChunkId,Data),
 	ok.
 
-%% choose_storage(Path, [#storage{ filelist = FileList} = Storage| Rest]) ->
-%% 	case lists:member(Path, FileList) of
-%% 		true ->
-%% 			Storage;
-%% 		false ->
-%% 			choose_storage(Path,Rest)
-%% 	end;
-%% choose_storage(_Path, []) ->
-%% 	enoent.
+read_reply({ok,<<Data/binary>>},{<<Acc/binary>>,[],Offset,{M,F,A}}) ->
 
+    %% Remove offset data
+    <<_Head:Offset/binary,NewAcc/binary>> = Acc,
+    
+    M:F(<<NewAcc/binary,Data/binary>>,A);
+read_reply({ok,<<Data/binary>>},
+	   {<<Acc/binary>>,
+	    [{chunk,ChunkId}|T],
+	    Offset,
+	    MFA}) ->
+    NewAcc = <<Acc/binary,Data/binary>>,
+    
+    ffs_chunk_server:read_async(ChunkId,{ffs_filesystem,
+					 read_reply,{NewAcc,T,Offset,MFA}});
+read_reply({error,Error},{_Acc,_Chunks,_Offset,{M,F,A}}) ->
+    M:F({error,Error},A).
 
-%% read_node_info_ets(TabName,Path) ->
-%%     Dir = filename:dirname(Path),
-%%     Name = filename:basename(Path),
-%%     find_inode(TabName,Dir,Name).
-
-%% make_dir_ets(TabName,NewDirPath,Storage) ->
-%%     NewName = filename:basename(NewDirPath),
-%%     ParentPath = filename:dirname(NewDirPath),
-%%     ParentName = filename:basename(ParentPath),
-%%     Path = filename:dirname(ParentPath),
-%%     case find_inode(TabName,Path,ParentName) of
-%% 	enoent ->
-%% 	    enoent;
-%% 	ParentInode ->
-%% 	    ffs_fat:make_dir(TabName,ParentInode,NewName,default,default,default)
-%%     end.
-
-%% create_file_ets(TabName,NewFilePath,Hash,Storage) ->
-%%     ok.
-
-%% find_inode(TabName,Path,Name) ->
-%%   ffs_fat:find(TabName,Path).
-
-
-%% encrypt_path(String,file) ->
-%%     re:replace(String,"/","-",[global,{return,list}])++"?file.ffs";
-%% encrypt_path(String,dir) ->
-%%     re:replace(String,"/","-",[global,{return,list}])++"?dir.ffs".
-
-%% decrypt_path(String) ->
-%%     Stripped = lists:reverse(filename:rootname(String)),
-%%     case re:split(Stripped,"[?]",[{return,list}]) of
-%% 	["rid",Path] ->
-%% 	    {dir,re:replace(lists:reverse(Path),"-","/",[global,{return,list}])};
-%% 	["elif",Path] ->
-%% 	    {file,re:replace(lists:reverse(Path),"-","/",[global,{return,list}])}
-%%     end.
-
-
-%% insert_dir(TabName,root,Path,Name,Store) ->
-%%     insert_dir(TabName,1,none,Path,Name,[],Store),
-%%     1;
-%% insert_dir(TabName,Parent,Path,Name,Store) ->
-%%     Inode = ets:last(TabName)+1,
-%%     [Node] = ets:lookup(TabName,Parent),
-
-%%     Data = Node#ffs_node.data,
-%%     NewChildren = [Inode|Data#ffs_dir.children],
-
-%%     NewNode = Node#ffs_node{ data = Data#ffs_dir{ children = NewChildren }},
-
-%%     insert_dir(TabName,Inode,Parent,Path,Name,[],Store),
-%%     update_node(TabName,NewNode),
-%%     Inode.
-
-
-%% insert_dir(TabName,Inode,Parent,Path,Name,Children,Store) ->
-%%     ets:insert(TabName,#ffs_node{ inode = Inode,
-%% 				  path = Path,
-%% 				  parent = Parent,
-%% 				  name = Name,
-%% 				  data = #ffs_dir{ children = Children },
-%% 				  stores = [Store]}).
-
-%% update_node(TabName,Node) ->
-%%     ets:insert(TabName,Node).
-
-
-%% update_ets(Data,Store,TabName) ->
-%%     insert_dirs(Data,Store,TabName),
-%%     insert_files(Data,Store,TabName).
-
-%% insert_dirs([H|T],Parent,Path,#ffs_dir{ children = Children },Store,TabName) ->
-%%     case find_node(TabName,H,Children) of
-%% 	node_not_found ->
-%% 	    NextParent = insert_dir(TabName,Parent,Path,H,Store),
-%% 	    insert_dirs(T,NextParent,Path++H,
-%% 		       ets:lookup_element(TabName,NextParent,#ffs_node.data),Store,TabName);
-%% 	#ffs_node{ inode = NextParent } = Node ->
-%% 	    add_store(TabName,Node,Store),
-%% 	    insert_dirs(T,NextParent,Path++H,Node#ffs_node.data,Store,TabName)
-%%     end;
-%% insert_dirs(Post,_Parent,Path,#ffs_file{},_Store,TabName) ->
-%%     error_handler:info_report(
-%%       io_lib:format("Trying to create ~p where a file exists.",[Path++Post]));
-%% insert_dirs([],_Parent,_Path,_dir,_Store,_TabName) ->
-%%     ok.
-
-%% add_store(TabName,Node,Store) ->
-%%     update_node(TabName,Node#ffs_node{
-%% 			  stores = lists:usort([Store|Node#ffs_node.stores])}).
-
-%% find_node(TabName,Name,[H|T]) ->
-%%     case ets:lookup(TabName,H) of
-%% 	[#ffs_node{ name = Name }  = Node] ->
-%% 	    Node;
-%% 	_ ->
-%% 	    find_node(TabName,Name,T)
-%%     end;
-%% find_node(_TabName,_Name,[]) ->
-%%     node_not_found.
-
-
-
-%% insert_dirs([{dir,Path}|T],Store,TabName) ->
-%%     insert_dirs(string:tokens(Path,"/"),1,"/",
-%% 		ets:lookup_element(TabName,1,#ffs_node.data),Store,TabName),
-%%     insert_dirs(T,Store,TabName);
-%% insert_dirs([_|T],Store,TabName) ->
-%%     insert_dirs(T,Store,TabName);
-%% insert_dirs([],_Store,_TabName) ->
-%%     ok.
-
-%% insert_files(_,_Store,_TabName) ->
-%%     ok.
 
 

@@ -609,7 +609,7 @@ symlink(Ctx, _Link, _Inode, _Name, _Cont, _State) -> ?DBG("symlink called"),
 %% @end
 
 write(Ctx, InodeI, Data, Offset, _Fi, _Cont, State) -> 
-  ?DBG("symlink called"),	
+  ?DBG("write called"),	
   ffs_filesystem:write(State#state.filesystem,InodeI,Data,Offset),
   {#fuse_reply_write{ count = size(Data) },State}.
 
