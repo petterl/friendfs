@@ -19,8 +19,17 @@
 -export([start_link/2]).
 
 %% Filesystem API
--export([list/2,read/3, write/4, flush/2, delete/3, make_dir/2, lookup/2, find/3,
-	 get_config/1,get_stats/1,create/6]).
+-export([list/2,
+	 read/5,
+	 write/4,
+	 flush/2,
+	 delete/3,
+	 make_dir/2,
+	 lookup/2,
+	 find/3,
+	 get_config/1,
+	 get_stats/1,
+	 create/6]).
 
 
 %% gen_server callbacks
@@ -51,7 +60,7 @@ start_link(Name,Args) ->
 %% List all files
 %%
 %% @spec
-%% list(Name, InodeI) -> [Storage]
+%%   list(Name, InodeI) -> [Storage]
 %% @end
 %%--------------------------------------------------------------------
 list(Name,INodeI) ->
@@ -63,18 +72,18 @@ list(Name,INodeI) ->
 %% Read a chunk from a storage
 %%
 %% @spec
-%%   read(Name,Path,Offset) -> ok | {error, Error}
+%%   read(Name,Inode,Size,Offset,ReadCB) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-read(Name,Path, Offset) ->
-    gen_server:call(Name, {read, Path, Offset}).
+read(Name, Inode, Size, Offset, ReadCB) ->
+    gen_server:cast(Name, {read, Inode, Size, Offset, ReadCB}).
 
 %%--------------------------------------------------------------------
 %% @doc
 %% Write a chunk to storages
 %%
 %% @spec
-%%   write(Name, Inode, Path, Data) -> ok | {error, Error}
+%%   write(Name, Inode, Data, Offset) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
 write(SrvName, InodeI, Data, Offset) ->
@@ -189,26 +198,26 @@ get_stats(Name) ->
 %%--------------------------------------------------------------------
 init([State,_Args]) ->
     process_flag(trap_exit,true),
-	Stats = [{total_mem,0},
-			 {free_mem,0},
-    		 {free_inodes,1 bsl 32 - 1}],
-
-	Config = [{block_size,512},
-    		  {inode_limit,1 bsl 32},
-    		  {filesystem_id,1},
-    		  {chunk_size,1 bsl 15}, %% 32 kB
-    		  {mnt_opts,0},
-    		  {max_filename_size,36#sup},
+    Stats = [{total_mem,0},
+	     {free_mem,0},
+	     {free_inodes,1 bsl 32 - 1}],
+    
+    Config = [{block_size,512},
+	      {inode_limit,1 bsl 32},
+	      {filesystem_id,1},
+	      {chunk_size,1 bsl 15}, %% 32 kB
+	      {mnt_opts,0},
+	      {max_filename_size,36#sup},
               {uid,0},
               {gid,0},
               {mode,755}],
-
+    
     Tid = ffs_fat:init(State#state.name,
-					   ffs_lib:get_value(chunk_size,Config),
-					   ffs_lib:get_value(uid,Config),
-					   ffs_lib:get_value(gid,Config),
-					   ffs_lib:get_value(mode,Config)),
-
+		       ffs_lib:get_value(chunk_size,Config),
+		       ffs_lib:get_value(uid,Config),
+		       ffs_lib:get_value(gid,Config),
+		       ffs_lib:get_value(mode,Config)),
+    
     NewState = State#state{ fat = Tid, stats = Stats, config = Config },
     {ok, NewState}.
 
@@ -266,58 +275,6 @@ handle_call({flush,InodeI}, _From, State) ->
 			ok
 	end,
 	{reply,ok,State};
-	
-%% Old code
-%% handle_call({read_node_info,Path}, _From, #state{ fat = TabName} = State) ->
-%%     case read_node_info_ets(TabName,Path) of
-%% 	enoent ->
-%% 	    {reply,{error,enoent},State};
-%% 	Inode ->
-%% 	    {reply,hd(ets:lookup(TabName,Inode)),State}
-%%     end;
-%% handle_call({read, Path, Offset}, From, State) ->
-%%     Storage = choose_storage(Path, State#state.storages),
-%% 	if
-%% 		Storage == enoent ->
-%% 			{reply,enoent,State};
-%% 		true ->
-%%     		Pid = Storage#storage.pid,
-%% 		EncPath = encrypt_path(Path,file),
-%%     		gen_server:cast(Pid, {read, From, EncPath, Offset}),
-%%     		{noreply, State}
-%% 	end;
-%% handle_call({write, Path, Data}, From, State) ->
-%%     Storage = hd(State#state.storages),
-%%     Pid = Storage#storage.pid,
-%%     EncPath = encrypt_path(Path,file),
-%%     gen_server:cast(Pid,{write, From, EncPath, Data}),
-%%     NewStorage = Storage#storage{
-%% 		   filelist = lists:usort([Path|Storage#storage.filelist])},
-%%     {noreply, State#state{ storages = lists:keyreplace(Pid,#storage.pid,State#state.storages,NewStorage)}};
-%% handle_call({make_dir, Path}, _From, State) ->
-%%     Storage = hd(State#state.storages),
-%%     Pid = Storage#storage.pid,
-%%     EncPath = encrypt_path(Path,dir),
-%%     case gen_server:call(Pid,{write, EncPath, <<"">>}) of
-%% 	ok ->
-%% 	    make_dir_ets(State#state.fat,Path,Storage),
-%% 	    {reply,ok,State};
-%% 	{error,Reason} ->
-%% 	    {reply,{error,Reason},State}
-%%     end;
-%% handle_call({delete, Path}, _From, State) ->
-%%     New = lists:map(
-%% 	    fun(#storage{pid = Pid, filelist = FL} = S) ->
-%% 		    case lists:member(Path,FL) of
-%% 			true ->
-%% 			    EncPath = encrypt_path(Path,file),
-%% 			    gen_server:call(Pid,{delete,EncPath}),
-%% 			    S#storage{ filelist = S#storage.filelist -- [Path]};
-%% 			false ->
-%% 			    S
-%% 		    end
-%% 	    end,State#state.storages),
-%%     {reply, ok, State#state{storages = New}};
 handle_call(_Request, _From, State) ->
 
     Reply = ok,
@@ -333,6 +290,20 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast({read,InodeI,Size,Offset,{M,F,A}},State) ->
+    {NewOffset,ChunkIds} = ffs_fat:read(State#state.fat,InodeI,Size,Offset),
+    ChunkData = lists:foldl(
+		  fun({chunk,ChunkId},<<Acc/binary>>) ->
+			  {ok,<<Data/binary>>} = ffs_chunk_server:read(ChunkId),
+			  <<Acc/binary,Data/binary>>
+		  end,<<"">>,ChunkIds),
+
+    %% Remove data before offset
+    <<_Head:NewOffset/binary, Rest/binary>> = ChunkData,
+
+    apply(M,F,[Rest,A]),
+							     
+    {noreply, State};
 handle_cast(_Msg, State) ->
     io:format("~p: Unknown handle_cast(~p,~p) call\n",[?MODULE,_Msg,State]),
     {noreply, State}.
