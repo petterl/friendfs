@@ -21,10 +21,9 @@
 -export([start/1]).
 
 %% Storage API
--export([read/1, write/2, write/3, delete/1]).
--export([update_storage/4]).
+-export([read/1, write/2, write/3, delete/1, delete/2]).
+-export([write_direct/3, update_storage/4]).
 -export([info/0]).
-
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -105,7 +104,25 @@ write(ChunkId, Data, Ratio) ->
 
 %%--------------------------------------------------------------------
 %% @doc
+%% Create or Update data for a chunk in storages
+%% Ratio is a a value of how many storages it should atleast be stored on.
+%% If Ratio = infinite means store on all storages.
+%%
+%% @spec
+%%   write(chunk_id(), binary(), Ratio) -> ok | {error, Reason}
+%%     Ratio = infinite | int()
+%%     Reason = already_exists | enoent | eacces | eisdir | enotdir | atom()
+%% @end
+%%--------------------------------------------------------------------
+write_direct(ChunkId, Data, StorageUrl) ->
+    gen_server:call(?SERVER, {write_direct, ChunkId, StorageUrl, Data}).
+
+%%--------------------------------------------------------------------
+%% @doc
 %% Delete a chunk from all storages
+%%
+%% It actuallt sets the ratio for the chunk to 0 and letting the
+%% replicator delete the chunks when possible
 %%
 %% @spec
 %%   delete(chunk_id()) -> ok | {error, Reason}
@@ -113,6 +130,20 @@ write(ChunkId, Data, Ratio) ->
 %%--------------------------------------------------------------------
 delete(ChunkId) ->
     gen_server:call(?SERVER, {delete, ChunkId}).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Delete a chunk from a specific storage
+%%
+%% Called by the replicator to delete from specific storages.
+%% Will always return ok, even if nothins was deleted.
+%%
+%% @spec
+%%   delete(chunk_id(), storage_url()) -> ok
+%% @end
+%%--------------------------------------------------------------------
+delete(ChunkId, StorageUrl) ->
+    gen_server:cast(?SERVER, {delete, ChunkId, StorageUrl}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -205,6 +236,16 @@ handle_call({ write, ChunkId, Ratio, Data}, _From, State) ->
             end
     end;
 
+handle_call({ write_direct, ChunkId, StorageUrl, Data}, _From, State) ->
+    Res = case ets:lookup(storages, StorageUrl) of
+              [S = #storage{}] ->
+                  gen_server:call(S#storage.pid, {write, ChunkId, Data});
+              [] ->
+                  {error, storage_not_found}
+    end,
+    {reply, Res, State};
+
+
 handle_call({ delete, ChunkId}, _From, State) ->
     Res =
         case ets:update_element(chunks, ChunkId, {#chunk.ratio, 0}) of
@@ -235,11 +276,21 @@ handle_call(_Request, _From, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast({ delete, ChunkId, StorageUrl}, State) ->
+    case ets:lookup(storages, StorageUrl) of
+        [S = #storage{}] ->
+            gen_server:cast(S#storage.pid, {delete, ChunkId});
+        [] ->
+            ok
+    end,
+    {noreply, State};
+
 handle_cast({update_storage, From, Url, AddedChunkIds, RemovedChunkIds}, State) ->
     case ets:lookup(storages, Url) of
         [#storage{}] ->
             add_storage_to_chunks(AddedChunkIds, Url),
-            remove_storage_from_chunks(RemovedChunkIds, Url);
+            remove_storage_from_chunks(RemovedChunkIds, Url),
+            delete_unused_chunks();
         [] ->
             % Monitor that storage if it goes down
             Ref = erlang:monitor(process, From),
@@ -352,6 +403,8 @@ remove_storage_from_chunks([ChunkId | R], StorageUrl) ->
     end,
     remove_storage_from_chunks(R, StorageUrl).
 
+delete_unused_chunks() ->
+    ets:match_delete(chunks, #chunk{id='$1', ratio=0, storages=[], _='_'}).
 
 choose_storage([]) ->
     not_found;
