@@ -322,8 +322,17 @@ lookup(Ctx, ParentInodeI, BinName, _Cont, State) ->
 %% and the second argument of type mkdir_async_reply ().
 %% @end
 
-mkdir(Ctx, _ParentInode, _Name, _Mode, _Cont, _State) -> ?DBG("mkdir called"),
-  erlang:throw (not_implemented).
+mkdir(Ctx, ParentInodeI, Name, Mode, _Cont, State) ->
+    ?DBG("mkdir called"),
+
+    Inode = ffs_filesystem:make_dir(State#state.filesystem,
+				    ParentInodeI,
+				    binary_to_list(Name),to_ffs_mode(Mode)),
+    
+     {#fuse_reply_entry
+	     { fuse_entry_param =
+	       inode_to_param(Inode,State#state.filesystem) },
+	     State}.
 
 %% @spec mknod(Ctx::#fuseCtx{}, ParentInode::integer (), Name::binary (), Mode::stat_mode (), Dev::device (), Cont::continuation (), State) -> { mknod_async_reply (), NewState } | { noreply, NewState }
 %%  device () = { Major::integer (), Minor::integer () }

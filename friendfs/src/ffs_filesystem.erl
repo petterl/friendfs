@@ -24,7 +24,7 @@
 	 write/4,
 	 flush/2,
 	 delete/3,
-	 make_dir/2,
+	 make_dir/4,
 	 lookup/2,
 	 find/3,
 	 get_config/1,
@@ -136,8 +136,8 @@ delete(SrvName, ParentI,Name) ->
 %%   make_dir(Name,Path) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-make_dir(Name, Path) ->
-    gen_server:call(Name, {make_dir, Path}).
+make_dir(SrvName, ParentInodeI, Name, Mode) ->
+    gen_server:call(SrvName, {make_dir, ParentInodeI,Name,Mode}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -278,6 +278,15 @@ handle_call({flush,InodeI}, _From, State) ->
 			ok
 	end,
 	{reply,ok,State};
+handle_call({make_dir, ParentI, Name, Mode}, _From, State) ->
+
+    Parent = ffs_fat:lookup(State#state.fat,ParentI),
+
+    #ffs_inode{ gid = Gid, uid = Uid} = Parent,
+    
+    NewInode = ffs_fat:make_dir(State#state.fat,ParentI, Name, Uid, Gid, Mode),
+    
+    {reply,NewInode,State};
 handle_call(_Request, _From, State) ->
 
     Reply = ok,
