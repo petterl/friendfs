@@ -1,4 +1,4 @@
- ** this is the overview.doc file for the application 'frob' **
+ ** this is the overview.doc file for the application 'friendfs' **
 
 @author Lukas Larsson <garazdawi@gmail.com>
 @author Petter Sandhold <petter@sandholdt.se>
@@ -7,3 +7,6 @@
 @title Friendfs, friends as backup!
 @doc Friendfs is a filesystem which allows you to automatically
 backup your data at friends servers.
+
+
+@link design.html
