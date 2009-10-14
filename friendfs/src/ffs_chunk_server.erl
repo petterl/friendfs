@@ -83,10 +83,10 @@ read(ChunkId) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Read data from a chunk from any storage
-%% Respond by calling callback function with M:F(Response, A)
+%% Respond by calling the callback function with the response
 %%
 %% @spec
-%%   read_async(ChunkId :: chunk_id(), Fun :: {M,F,A}) -> ok
+%%   read_async(ChunkId :: chunk_id(), Fun :: fun()) -> ok
 %%     Response = {ok, Data} | {error, Reason}
 %%     Reason   = enoent | eacces | eisdir | enotdir | enomem | atom()
 %% @end
