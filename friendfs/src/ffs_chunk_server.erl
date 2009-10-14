@@ -22,7 +22,7 @@
 
 %% Storage API
 -export([read/1, write/2, write/3, delete/1, delete/2]).
--export([write_direct/3, update_storage/4]).
+-export([write_replicate/2, update_storage/4]).
 -export([info/0]).
 
 %% gen_server callbacks
@@ -104,18 +104,18 @@ write(ChunkId, Data, Ratio) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Create or Update data for a chunk in storages
-%% Ratio is a a value of how many storages it should atleast be stored on.
-%% If Ratio = infinite means store on all storages.
+%% Replicate data for chunk to new storages
+%%
+%% Used by replication server when replication of a chunk is needed
 %%
 %% @spec
-%%   write(chunk_id(), binary(), Ratio) -> ok | {error, Reason}
+%%   write_replicate(chunk_id(), binary()) -> ok | {error, Reason}
 %%     Ratio = infinite | int()
 %%     Reason = already_exists | enoent | eacces | eisdir | enotdir | atom()
 %% @end
 %%--------------------------------------------------------------------
-write_direct(ChunkId, Data, StorageUrl) ->
-    gen_server:call(?SERVER, {write_direct, ChunkId, StorageUrl, Data}).
+write_replicate(ChunkId, Data) ->
+    gen_server:call(?SERVER, {write_replicate, ChunkId, Data}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -230,26 +230,43 @@ handle_call({ write, ChunkId, Ratio, Data}, _From, State) ->
                 {ok, Storage} ->
                     ets:insert(chunks, #chunk{id=ChunkId, ratio=Ratio,
                                storages=[Storage#storage.url]}),
+                    ffs_chunk_replicator:refresh(),
                     {reply, ok, State};
                 {error, _} = Error ->
                     {reply, Error, State}
             end
     end;
 
-handle_call({ write_direct, ChunkId, StorageUrl, Data}, _From, State) ->
-    Res = case ets:lookup(storages, StorageUrl) of
-              [S = #storage{}] ->
-                  gen_server:call(S#storage.pid, {write, ChunkId, Data});
-              [] ->
-                  {error, storage_not_found}
-    end,
-    {reply, Res, State};
+handle_call({ write_replicate, ChunkId, Data}, _From, State) ->
+    case ets:lookup(chunks, ChunkId) of
+        [#chunk{storages = StorageUrls, ratio = Ratio}] when
+           length(StorageUrls) >= Ratio;
+           Ratio == infinite ->
+            AllStorages = ets:tab2list(storages),
 
+            case lists:filter(
+                   fun(#storage{url=Url}) ->
+                           not lists:member(Url, StorageUrls)
+                   end, AllStorages) of
+                [] ->
+                    {reply, {error, not_needed}, State};
+                Remaining ->
+                    S = choose_write_storage(Remaining),
+                    io:format("Replicate ~p to ~p~n", [ChunkId, S#storage.url]),
+                    Res = gen_server:call(S#storage.pid, {write, ChunkId, Data}),
+                    {reply, Res, State}
+            end;
+        [#chunk{}] ->
+            {reply, {error, not_needed}, State};
+        [] ->
+            {reply, {error, chunk_not_found}, State}
+    end;
 
 handle_call({ delete, ChunkId}, _From, State) ->
     Res =
         case ets:update_element(chunks, ChunkId, {#chunk.ratio, 0}) of
             true ->
+                ffs_chunk_replicator:refresh(),
                 ok;
             false ->
                 {error, not_found}
@@ -290,7 +307,8 @@ handle_cast({update_storage, From, Url, AddedChunkIds, RemovedChunkIds}, State) 
         [#storage{}] ->
             add_storage_to_chunks(AddedChunkIds, Url),
             remove_storage_from_chunks(RemovedChunkIds, Url),
-            delete_unused_chunks();
+            delete_unused_chunks(),
+            ffs_chunk_replicator:refresh();
         [] ->
             % Monitor that storage if it goes down
             Ref = erlang:monitor(process, From),

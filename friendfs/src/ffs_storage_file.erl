@@ -169,5 +169,9 @@ refresh_storage(State) ->
     {ok, Files} = file:list_dir(State#state.path),
     Added = lists:subtract(Files, State#state.chunks),
     Removed = lists:subtract(State#state.chunks, Files),
-    ffs_chunk_server:update_storage(State#state.url, self(), Added, Removed),
+    case {Added, Removed} of
+        {[],[]} -> ok;
+        _ ->
+            ffs_chunk_server:update_storage(State#state.url, self(), Added, Removed)
+    end,
     State#state{chunks = Files}.

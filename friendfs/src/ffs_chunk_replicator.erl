@@ -41,6 +41,7 @@
 
 -define(SERVER, ?MODULE).
 -define(INTERVAL, 10000).
+-define(HARD_RATIO, 1).
 
 -record(state, {queue = []  % replication queue
             }).
@@ -142,8 +143,7 @@ handle_cast(refresh, State = #state{queue=Q}) ->
     % remove actions already in Queue
     DeleteA2 = lists:filter(fun(A) -> not lists:member(A, Q) end, DeleteA),
     
-    Q2 = Q ++ RatioA2 ++ DeleteA2,
-    io:format("New Queue: ~n~p~n", [Q2]),
+    Q2 = lists:sort(fun prioritize/2, Q ++ RatioA2 ++ DeleteA2),
     {noreply, State#state{queue=Q2}, ?INTERVAL};
 
 handle_cast(_Msg, State) ->
@@ -163,32 +163,42 @@ create_delete_action_tuples([[ChunkId, [StorageUrl | R]] | R2]) ->
 create_copy_actions() ->
     Match = ets:match(chunks, #chunk{id='$1', storages='$2', ratio='$3', _='_'}),
     create_copy_action_tuples(Match).
+
 create_copy_action_tuples([]) ->
     [];
+create_copy_action_tuples([[_ChunkId, _Storages, 0]|R]) ->
+    create_copy_action_tuples(R);
 create_copy_action_tuples([[_ChunkId, _Storages, undefined]|R]) ->
     create_copy_action_tuples(R);
 create_copy_action_tuples([[_ChunkId, Storages, Ratio]|R])
-    when length(Storages) >= Ratio ->
+  when length(Storages) >= Ratio ->
     create_copy_action_tuples(R);
-create_copy_action_tuples([[ChunkId, [Storage], Ratio] | R])
-    when Ratio > 1 ->
-    %% Only on one Storage!!
-    AllStorages = ets:match(storages, #storage{url='$1', _='_'}),
-    Remaining = AllStorages -- [Storage],
-    [S] = lists:nth(random:uniform(length(Remaining)), Remaining),
-    [{copy, ChunkId, S, infinite} |
+create_copy_action_tuples([[ChunkId, Storages, _Ratio] | R])
+  when length(Storages) =< ?HARD_RATIO ->
+    % Needs to be replicated now
+    [{copy, ChunkId, infinite} |
      create_copy_action_tuples(R)];
-create_copy_action_tuples([[ChunkId, Storages, inifinte]|R]) ->
+create_copy_action_tuples([[ChunkId, Storages, infinite]|R]) ->
     AllStorages = ets:match(storages, #storage{url='$1', _='_'}),
-    Remaining = lists:filter(
-                  fun([S]) -> not lists:member(S, Storages) end, AllStorages),
-    [{copy, ChunkId, length(Remaining)} |
-     create_copy_action_tuples(R)];
+    case lists:filter(
+           fun([S]) -> not lists:member(S, Storages) end, AllStorages) of
+        [] -> create_copy_action_tuples(R);
+        Remaining ->
+            [{copy, ChunkId, length(Remaining)} |
+             create_copy_action_tuples(R)]
+    end;
 create_copy_action_tuples([[ChunkId, Storages, Ratio]|R]) ->
     Prio = Ratio - length(Storages),
     [{copy, ChunkId, Prio} | create_copy_action_tuples(R)].
 
-    
+prioritize({copy, _, _}, {delete, _, _}) ->   true;
+prioritize({delete, _, _}, {delete, _, _}) -> true;
+prioritize({copy, _, Ratio1}, {copy, _, Ratio2})
+  when Ratio1 > Ratio2 ->
+    true;
+prioritize({copy, _, infinite}, _) ->
+    true;
+prioritize(_, _) -> false.
     
 %%--------------------------------------------------------------------
 %% @private
@@ -203,7 +213,8 @@ create_copy_action_tuples([[ChunkId, Storages, Ratio]|R]) ->
 handle_info(timeout, State = #state{queue=[]}) ->
     {noreply, State, ?INTERVAL};
 handle_info(timeout, State = #state{queue=[Action | Queue]}) ->
-    action(Action),
+    Res = action(Action),
+    io:format("~p: ~p -> ~p~n", [?MODULE, Action, Res]),
     {noreply, State#state{queue=Queue}, ?INTERVAL};
 handle_info(_Info, State) ->
     io:format("Info ~p~n", [_Info]),
@@ -247,20 +258,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%     add_action(copy, From, Remaining, ChunkId, State2).
 
 action(_A = {delete, ChunkId, StorageUrl}) ->
-    io:format("action: ~p~n", [_A]),
     ffs_chunk_server:delete(ChunkId, StorageUrl);
 
-action(_A = {copy, ChunkId, StorageUrl, _Ratio}) ->
-    io:format("action: ~p~n", [_A]),
+action(_A = {copy, ChunkId, _Ratio}) ->
     case ffs_chunk_server:read(ChunkId) of
         {ok, Data} ->
-            ffs_chunk_server:write_direct(ChunkId, Data, StorageUrl);
+            ffs_chunk_server:write_replicate(ChunkId, Data);
         _ ->
-            io:format("Failed to read chunk: ~p~n", [ChunkId])
+            {error, {read_error, ChunkId}}
     end;
 
 action(Action) ->
-    io:format("action: ~p~n", [Action]).
-%%     io:format("DO ACTION: ~p~n", [Action]),
-%%     ok.
+    {error, {unknown_action, Action}}.
 
