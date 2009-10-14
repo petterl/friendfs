@@ -115,12 +115,12 @@ handle_cast({read, Path, From}, State) ->
     gen_server:reply(From, Res),
     {noreply, State, ?REFRESH_INTERVAL};
 
-handle_cast({read_async, Path, {M,F,A}}, State) ->
+handle_cast({read_async, Path, Fun}, State) ->
     % Read data from file
     Res = file:read_file(join(State#state.path, Path)),
     % Send it to requesting process
-    R = M:F(Res, A),
-    io:format("Calling ~p:~p(~p, ~p) -> ~p~n", [M, F, Res, A, R]),
+    R = Fun(Res),
+    io:format("Calling ~p(~p) -> ~p~n", [Fun, Res, R]),
 
     {noreply, State, ?REFRESH_INTERVAL}.
 

@@ -308,7 +308,7 @@ handle_call(_Request, _From, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({ read_async, ChunkId, {M,F,A}}, State) ->
+handle_cast({ read_async, ChunkId, Fun}, State) ->
     % Find Chunk information from ChunkId
     case ets:lookup(chunks, ChunkId) of
         [#chunk{storages = StorageUrls}] ->
@@ -317,12 +317,12 @@ handle_cast({ read_async, ChunkId, {M,F,A}}, State) ->
                 #storage{pid = Pid} ->
                     % Send a read cast to that storage and return
                     % (the storage will reply with data or error)
-                    gen_server:cast(Pid, {read_async, ChunkId, {M,F,A}});
+                    gen_server:cast(Pid, {read_async, ChunkId, Fun});
                 not_found ->
-                    M:F({error, enoent}, A)
+                    Fun({error, enoent})
             end;
         [] ->
-            M:F({error, enoent}, A)
+            Fun({error, enoent})
     end,
     {noreply, State};
 
