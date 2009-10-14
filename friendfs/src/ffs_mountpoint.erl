@@ -12,6 +12,7 @@
 
 -include_lib("fuserl/include/fuserl.hrl").
 -include_lib("friendfs/include/friendfs.hrl").
+-include_lib("kernel/include/file.hrl").
 
 %-behaviour(fuserlsrv).
 
@@ -58,7 +59,7 @@
 %% friendfs callbacks
 -export([read_reply/2]).
 
--record(state,{ filesystem }).
+-record(state,{ filesystem, default_uid, default_gid }).
 
 -define(DBG(Str), io:format("Ctx = ~p\n"++Str++"\n",[Ctx])).
 
@@ -74,9 +75,19 @@
 %%--------------------------------------------------------------------
 start_link(MountPoint,Options) ->
     {MountOpts,FfsOpts} = parse_options(Options),
+
+    {ok,FileInfo} = file:read_file_info(MountPoint),
+    
+    ParentGid = integer_to_list(FileInfo#file_info.gid),
+    ParentUid = integer_to_list(FileInfo#file_info.uid),
+    
+    DefaultGid = list_to_integer(proplists:get_value("gid",FfsOpts,ParentGid)),
+    DefaultUid = list_to_integer(proplists:get_value("uid",FfsOpts,ParentUid)),
+    
     {ok,LinkedIn} = application:get_env(friendfs,linked_in),
     fuserlsrv:start_link(?MODULE,LinkedIn,MountOpts,
-			 MountPoint,FfsOpts,[]).
+			 MountPoint,{MountPoint,DefaultUid,DefaultGid,FfsOpts},
+			 []).
 
 %%%===================================================================
 %%% fuserlsrv filesystem callbacks
@@ -154,7 +165,7 @@ create (#fuse_ctx{ uid = Uid, gid = Gid} = Ctx, ParentI,
     NewInode = ffs_filesystem:create(
 		 State#state.filesystem,ParentI,binary_to_list(BinName),
 		 Uid,Gid,to_ffs_mode(Mode)),
-    Param = inode_to_param(NewInode,State#state.filesystem),
+    Param = inode_to_param(NewInode,State),
     {#fuse_reply_create{fuse_entry_param = Param, fuse_file_info = Fi},State}.
 
 %% @spec flush(Ctx::#fuse_ctx{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { flush_async_reply (), NewState } | { noreply, NewState } 
@@ -226,7 +237,7 @@ getattr(Ctx, InodeI, _Cont, State) ->
 		enoent ->
 			{#fuse_reply_err{ err = enoent}, State};
 		Inode ->
-			{#fuse_reply_attr{ attr= stat(Inode,State#state.filesystem), 
+			{#fuse_reply_attr{ attr= stat(Inode,State), 
 							   attr_timeout_ms=1000}, State}
 	end.
 
@@ -307,7 +318,7 @@ lookup(Ctx, ParentInodeI, BinName, _Cont, State) ->
 	Inode ->
 	    {#fuse_reply_entry
 	     { fuse_entry_param =
-	       inode_to_param(Inode,State#state.filesystem) },
+	       inode_to_param(Inode,State) },
 	     State}
     end.
     
@@ -331,7 +342,7 @@ mkdir(Ctx, ParentInodeI, Name, Mode, _Cont, State) ->
     
      {#fuse_reply_entry
 	     { fuse_entry_param =
-	       inode_to_param(Inode,State#state.filesystem) },
+	       inode_to_param(Inode,State) },
 	     State}.
 
 %% @spec mknod(Ctx::#fuseCtx{}, ParentInode::integer (), Name::binary (), Mode::stat_mode (), Dev::device (), Cont::continuation (), State) -> { mknod_async_reply (), NewState } | { noreply, NewState }
@@ -417,7 +428,7 @@ readdir(Ctx, InodeI, _Size, Offset, _Fi, _Cont, State) ->
 		 fun({Name,Inode},Offset) -> 
 			 {#direntry{ name = Name,
 				     offset = Offset,
-				     stat = stat(Inode,State#state.filesystem)},
+				     stat = stat(Inode,State)},
 			  Offset+1}
 		 end,Offset+1,lists:nthtail(Offset,FfsList)),
     {#fuse_reply_direntrylist{ direntrylist = List },State}.
@@ -531,7 +542,7 @@ setattr(Ctx, InodeI, Attr, ToSet, _Fi, _Cont, State) ->
 						?FUSE_SET_ATTR_ATIME,
 						?FUSE_SET_ATTR_MTIME]),
 	Inode = ffs_filesystem:lookup(State#state.filesystem,InodeI),
-  {#fuse_reply_attr{ attr = stat(Inode,State#state.filesystem), attr_timeout_ms = 0 },State}.
+  {#fuse_reply_attr{ attr = stat(Inode,State), attr_timeout_ms = 0 },State}.
 
 %% @spec setlk(Ctx::#fuseCtx{}, Inode::integer (), Fi::#fuse_file_info{}, Lock::#flock{}, Sleep::bool(), Cont::continuation (), State) -> { setlk_async_reply (), NewState } | { noreply, NewState }
 %%   setlk_async_reply () = #fuse_reply_err{}
@@ -650,10 +661,13 @@ unlink(Ctx, _Inode, _Name, _Cont, _State) -> ?DBG("unlink called"),
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init(FfsOpts) ->
+init({MountPoint,DefUid,DefGid,FfsOpts}) ->
     Filesystem = list_to_atom(proplists:get_value("fs",FfsOpts)),
+
     link(whereis(Filesystem)),
-    {ok, #state{ filesystem = Filesystem }}.
+    {ok, #state{ filesystem = Filesystem,
+		 default_gid = DefGid,
+		 default_uid = DefUid }}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -708,6 +722,10 @@ parse_options(String) ->
     parse_options(Tokens,"",[]).
 parse_options(["fs="++Filesystem|T],MountAcc,FfsAcc) ->
     parse_options(T,MountAcc,[{"fs",Filesystem}|FfsAcc]);
+parse_options(["gid="++Filesystem|T],MountAcc,FfsAcc) ->
+    parse_options(T,MountAcc,[{"gid",Filesystem}|FfsAcc]);
+parse_options(["uid="++Filesystem|T],MountAcc,FfsAcc) ->
+    parse_options(T,MountAcc,[{"uid",Filesystem}|FfsAcc]);
 parse_options([Key|T],MountAcc,FfsAcc) ->
     parse_options(T,Key++MountAcc,FfsAcc);
 parse_options([],MountAcc,FfsAcc) ->
@@ -719,28 +737,42 @@ to_unix({Mega,Secs,_Micro}) ->
 unix_to_now(Secs) ->
 	{Secs div 1000000, Secs rem 1000000,0}.
 	
-inode_to_param(#ffs_inode{inode = InodeI} = Inode,FS) ->
+inode_to_param(#ffs_inode{inode = InodeI} = Inode,State) ->
 	#fuse_entry_param{ ino = InodeI,
 			  generation = 0,%element(3,now()),
-			  attr = stat(Inode,FS),
+			  attr = stat(Inode,State),
 			  attr_timeout_ms = 100,
 			  entry_timeout_ms = 100}.
 	
 stat(#ffs_inode{ inode = Inode, gid = Gid, uid = Uid,
 		 atime = Atime, mtime = Mtime,
 		 ctime = Ctime, refcount = Links,
-		 size = Size, mode = Mode },FS )  ->
+		 size = Size, mode = Mode },State )  ->
 			
-	Config = ffs_filesystem:get_config(FS),
-	BSize = ffs_lib:get_value(Config,block_size),
+    Config = ffs_filesystem:get_config(State#state.filesystem),
+    BSize = ffs_lib:get_value(Config,block_size),
+
+    NewUid = if
+		 Uid == -1 ->
+		     State#state.default_uid;
+		 true ->
+		     Uid
+	     end,
+
+    NewGid = if
+		 Gid == -1 ->
+		     State#state.default_gid;
+		 true ->
+		     Gid
+	     end,
 	
     #stat{
 %      st_dev = { 0, 0 },                  % ID of device containing file 
       st_ino = Inode,                     % inode number 
       st_mode = to_fuse_mode(Mode),       % protection 
       st_nlink = Links,                   % number of hard links 
-      st_uid = Uid,                       % user ID of owner 
-      st_gid = Gid,                       % group ID of owner 
+      st_uid = NewUid,                    % user ID of owner 
+      st_gid = NewGid,                    % group ID of owner 
 %      st_rdev = { 0, 0 },                % device ID (if special file) 
       st_size = Size,                     % total size = 0, in bytes 
       st_blksize = BSize,                 % blocksize for filesystem I/O 

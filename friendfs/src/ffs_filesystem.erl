@@ -211,8 +211,8 @@ init([State,_Args]) ->
 	      {chunk_size,1 bsl 15}, %% 32 kB
 	      {mnt_opts,0},
 	      {max_filename_size,36#sup},
-              {uid,0},
-              {gid,0},
+              {uid,-1},
+              {gid,-1},
               {mode,755}],
     
     Tid = ffs_fat:init(State#state.name,

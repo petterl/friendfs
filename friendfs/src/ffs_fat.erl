@@ -74,9 +74,9 @@
 %% @end
 %%--------------------------------------------------------------------
 init(Name) ->
-	init(Name,2 bsl 20).
+    init(Name,2 bsl 20).
 init(Name,ChunkSize) ->
-	init(Name,ChunkSize,0,0,?U bor ?G_X bor ?G_R bor ?O_X bor ?O_R).
+    init(Name,ChunkSize,-1,-1,?U bor ?G_X bor ?G_R bor ?O_X bor ?O_R).
 init(Name,ChunkSize,Uid,Gid,Mode) ->
     ets:insert(?COUNTER_TABLE,{Name,0}),
     Tid = #ffs_tid{ 
