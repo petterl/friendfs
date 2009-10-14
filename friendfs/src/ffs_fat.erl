@@ -268,18 +268,21 @@ unlink(Tid,From,Path) ->
 unlink(#ffs_tid{ link = LinkTid, inode = InodeTid } = Tid,
        From, Path, ToInodeI) ->
     ToInode = lookup(Tid,ToInodeI),
-    case ToInode of
-	#ffs_inode{ refcount = 1 } ->
-	    ets:delete(InodeTid,ToInodeI);
-	#ffs_inode{ refcount = Cnt } ->
-	    ets:insert(InodeTid,ToInode#ffs_inode{ refcount = Cnt - 1 });
-	enoent ->
-	    enoent
-    end,
     ets:delete_object(LinkTid,#ffs_link{ from = From, 
 					 to = ToInode#ffs_inode.inode, 
 					 name = filename:basename(Path),
-					 _ = '_' }).
+					 type = hard }),
+    
+    case ToInode of
+	#ffs_inode{ refcount = 1 } ->
+	    ets:delete(InodeTid,ToInodeI),
+	    {delete,ToInode};
+	#ffs_inode{ refcount = Cnt } ->
+	    ets:insert(InodeTid,ToInode#ffs_inode{ refcount = Cnt - 1 }),
+	    {keep,ToInode};
+	enoent ->
+	    enoent
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc

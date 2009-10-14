@@ -26,7 +26,7 @@
 -export([ access/5,
 	  create/7,
 	  flush/5,
-	  forget/5,
+%	  forget/5,
 %	  fsync/6,
 	  fsyncdir/6,
 	  getattr/4,
@@ -52,7 +52,7 @@
 	  setxattr/7,
 	  statfs/4,
 	  symlink/6,
-%	  unlink/5,
+	  unlink/5,
 	  write/7
 	]).
 
@@ -643,8 +643,10 @@ write(Ctx, InodeI, Data, Offset, _Fi, _Cont, State) ->
 %% and the second argument of type unlink_async_reply ().
 %% @end
 
-unlink(Ctx, _Inode, _Name, _Cont, _State) -> ?DBG("unlink called"),
-  erlang:throw (not_implemented).
+unlink(Ctx, ParentI, Name, _Cont, State) ->
+    ?DBG("unlink called"),
+    ffs_filesystem:delete(State#state.filesystem,ParentI,binary_to_list(Name)),
+    { #fuse_reply_err{err = ok}, State}.
 
 %%%===================================================================
 %%% fuserlsrv general callbacks

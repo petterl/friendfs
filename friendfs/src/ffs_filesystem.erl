@@ -257,11 +257,19 @@ handle_call(get_config, _From, State) ->
 handle_call(get_stats, _From, State) ->
     {reply,State#state.stats, State};
 handle_call({create,ParentI,Name,Uid,Gid,Mode}, _From, State) ->
-	NewInode = ffs_fat:create(State#state.fat,ParentI,Name,Uid,Gid,Mode,0,0),
-	{reply,NewInode,State};
+    NewInode = ffs_fat:create(State#state.fat,ParentI,Name,Uid,Gid,Mode,0,0),
+    {reply,NewInode,State};
 handle_call({delete,ParentI,Name}, _From, State) ->
-	ffs_fat:unlink(State#state.fat,ParentI,Name),
-	{reply,ok,State};
+    
+    case ffs_fat:unlink(State#state.fat,ParentI,Name) of
+	{delete,Inode} ->
+	    [ffs_chunk_server:delete(ChunkId) ||
+		ChunkId <- Inode#ffs_inode.chunkids];
+	_Else ->
+	    ok
+    end,
+    
+    {reply,ok,State};
 handle_call({write,InodeI,Data,Offset}, _From, State) ->
 	case ffs_fat:write_cache(State#state.fat,InodeI,Data,Offset) of
 		[] ->
