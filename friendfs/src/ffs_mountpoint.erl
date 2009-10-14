@@ -378,7 +378,9 @@ opendir(Ctx, _Inode, Fi, _Cont, State) ->
 read(Ctx, InodeI, Size, Offset, Fi, Cont, State) ->
     ?DBG("read called"),
     ffs_filesystem:read(State#state.filesystem, InodeI, Size, Offset,
-			{ffs_mountpoint,read_reply,{InodeI,Size,Offset,Cont}}),
+			fun(Data) ->
+				read_reply(Data,{InodeI,Size,Offset,Cont})
+			end),
     {noreply,State}.
 
 read_reply(Data,{_InodeI,_Size,_Offset,Cont}) ->
