@@ -30,8 +30,8 @@
 	 get_xattr/3,
 	 set_xattr/4,
 	 delete_xattr/3,
-	 write_cache/4,
-	 flush_cache/2,
+	 write_cache/3,
+	 flush_cache/4,
 	 read/4
 ]).
 
@@ -480,69 +480,39 @@ delete_xattr(#ffs_tid{}, _Inode, _Key) ->
     enoent.
 
 
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Description
 %%
 %% @spec
-%%   write_cache(Tid,InodeI,NewData,Offset) -> [{chunk,ChunkId,Data}] | more
+%%   write_cache(Tid,InodeI,Data) -> ok | enoent
 %%      Tid = ffs_tid()
 %%      InodeI = inodei()
-%%      NewData = binary()
-%%      Offset = integer()
-%%      ChunkId = string()
-%%      Data = binary()
 %% @end
 %%--------------------------------------------------------------------
-write_cache(Tid,InodeI,AppendData,Offset) ->
-    write_cache(Tid,InodeI,AppendData,Offset,[]).
-write_cache(Tid,InodeI,AppendData,Offset,Acc) ->
-    ChunkSize = ffs_lib:get_value(chunk_size,Tid#ffs_tid.config),
-    Inode = lookup(Tid,InodeI),
-    NewData = case Inode of
-		  #ffs_inode{ write_cache = undefined } when (Offset rem ChunkSize) == 0 ->
-		      AppendData;
-		  #ffs_inode{ write_cache = OldData } when size(OldData) == (Offset rem ChunkSize) ->
-		      <<OldData/binary,AppendData/binary>>
-			  end,
-    io:format("Size of data is ~p\n",[size(NewData)]),
-    NewInode = Inode#ffs_inode{ size = size(AppendData) + Inode#ffs_inode.size },
-    if 
-	size(NewData) > ChunkSize ->
-	    <<FirstChunk:ChunkSize/binary,Rest/binary>> = NewData,
-	    Chunk = flush_cache(Tid,NewInode#ffs_inode{ write_cache = FirstChunk }),
-	    write_cache(Tid,InodeI,Rest,Offset+ChunkSize,[Chunk|Acc]);
-	size(NewData) == ChunkSize ->
-	    Chunk = flush_cache(Tid,NewInode#ffs_inode{ write_cache = NewData }),
-	    [Chunk|Acc];
-	true ->
-	    ets:insert(Tid#ffs_tid.inode,NewInode#ffs_inode{ write_cache = NewData }),
-	    Acc
-    end.
+write_cache(Tid,INodeI,Data) ->
+    INode = lookup(Tid,INodeI),
+    ets:insert(Tid#ffs_tid.inode,INode#ffs_inode{ write_cache = Data }).
+    
+
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Description	
+%% Description
 %%
 %% @spec
-%%   flush_cache(Tid,InodeI) -> {chunk,ChunkId,Data} | empty
+%%   flush_cache(Tid,InodeI,ChunkIds,Size) -> ok | enoent
 %%      Tid = ffs_tid()
 %%      InodeI = inodei()
 %% @end
 %%--------------------------------------------------------------------
-flush_cache(Tid,InodeI) when is_integer(InodeI) ->
-    flush_cache(Tid,lookup(Tid,InodeI));
-flush_cache(_Tid,#ffs_inode{ write_cache = undefined }) ->
-    empty;
-flush_cache(Tid,#ffs_inode{ write_cache = Data } = Inode) ->
-    {M,F} = ffs_lib:get_value(chunkid_mfa,Tid#ffs_tid.config),
-    ChunkId = M:F(Data),
-    NewInode = Inode#ffs_inode{ chunkids = Inode#ffs_inode.chunkids ++ [ChunkId],
-				write_cache = undefined },
-    ets:insert(Tid#ffs_tid.inode,NewInode),
-    {chunk,ChunkId,Data};
-flush_cache(_Tid,Else) ->
-    Else.
+flush_cache(Tid,INodeI,ChunkIds,Size) ->
+    INode = lookup(Tid,INodeI),
+    ets:insert(Tid#ffs_tid.inode,INode#ffs_inode{ 
+				   size = Size,
+				   chunkids = ChunkIds,
+				   write_cache = undefined }).
 
 
 %%--------------------------------------------------------------------

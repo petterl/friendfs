@@ -15,9 +15,6 @@
 
 -include_lib("friendfs/include/friendfs.hrl").
 
-%% API
--export([start_link/2]).
-
 %% Filesystem API
 -export([list/2,
 	 read/5,
@@ -48,26 +45,17 @@
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Starts the server
-%%
-%% @spec start_link(Name,Args) -> {ok, Pid} | ignore | {error, Error}
-%% @end
-%%--------------------------------------------------------------------
-start_link(Name,Args) ->
-    gen_server:start_link({local, Name}, ?MODULE, [#state{name = Name},Args], []).
-
-
-%%--------------------------------------------------------------------
-%% @doc
 %% List all files
 %%
 %% @spec
 %%   list(Name, InodeI) -> [Storage]
 %% @end
 %%--------------------------------------------------------------------
-list(Name,INodeI) ->
-    gen_server:call(Name, {list, INodeI}).
-
+list(FsName,INodeI) ->
+    Links = ffs_fat:list(ffs_config:read({fs_tid, FsName}), INodeI),
+    lists:map(fun(#ffs_link{ name = Name, to = To }) ->
+		      {Name,ffs_fat:lookup(ffs_config:read({fs_tid, FsName}),To)}
+	      end,Links).    
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -88,8 +76,68 @@ read(Name, Inode, Size, Offset, ReadCBFun) ->
 %%   write(Name, Inode, Data, Offset) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-write(SrvName, InodeI, Data, Offset) ->
-    gen_server:call(SrvName, {write, InodeI, Data, Offset}).
+write(FsName, InodeI, Data, Offset) ->
+    Tid = ffs_config:read({fs_tid, FsName}),
+    Config = ffs_config:read({fs_config, FsName}),
+    case write_cache(Tid, InodeI, Data, Offset) of
+	[] ->
+	    ok;
+	Chunks ->
+	    update_chunks(Chunks, Config)
+    end.
+
+update_chunks([{add_chunk, ChunkId, ChunkData} | R], Config) ->
+    store_chunk(ChunkId,ChunkData,Config),
+    update_chunks(R, Config);
+update_chunks([{delete_chunk, ChunkId} | R], Config) ->
+    delete_chunk(ChunkId, Config),
+    update_chunks(R, Config);
+update_chunks([],_Config) ->
+    [].
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Description
+%%
+%% @spec
+%%   write_cache(Tid,InodeI,NewData,Offset) -> [{chunk,ChunkId,Data}] | more
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
+%%      NewData = binary()
+%%      Offset = integer()
+%%      ChunkId = string()
+%%      Data = binary()
+%% @end
+%%--------------------------------------------------------------------
+write_cache(Tid,InodeI,AppendData,Offset) ->
+    write_cache(Tid,InodeI,AppendData,Offset,[]).
+write_cache(Tid,InodeI,AppendData,Offset,Acc) ->
+    ChunkSize = ffs_lib:get_value(chunk_size,Tid#ffs_tid.config),
+    Inode = ffs_fat:lookup(Tid,InodeI),
+    NewData = case Inode of
+		  #ffs_inode{ write_cache = undefined } 
+		    when (Offset rem ChunkSize) == 0 ->
+		      AppendData;
+		  #ffs_inode{ write_cache = OldData } 
+		    when size(OldData) == (Offset rem ChunkSize) ->
+		      <<OldData/binary,AppendData/binary>>
+			  end,
+    io:format("Size of data is ~p\n",[size(NewData)]),
+    NewInode = Inode#ffs_inode{ size = size(AppendData) + Inode#ffs_inode.size },
+    if 
+	size(NewData) > ChunkSize ->
+	    <<FirstChunk:ChunkSize/binary,Rest/binary>> = NewData,
+	    Chunk = flush_cache(Tid,NewInode#ffs_inode{ write_cache = FirstChunk }),
+	    write_cache(Tid,InodeI,Rest,Offset+ChunkSize,[Chunk|Acc]);
+	size(NewData) == ChunkSize ->
+	    Chunk = flush_cache(Tid,NewInode#ffs_inode{ write_cache = NewData }),
+	    [Chunk|Acc];
+	true ->
+	    ffs_fat:write_cache(
+	      Tid,InodeI,NewData, size(AppendData) + Inode#ffs_inode.size),
+	    Acc
+    end.
+
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -101,6 +149,27 @@ write(SrvName, InodeI, Data, Offset) ->
 %%--------------------------------------------------------------------
 flush(SrvName, InodeI ) ->
     gen_server:call(SrvName, {flush, InodeI}).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Description	
+%%
+%% @spec
+%%   flush_cache(Tid,InodeI) -> {chunk,ChunkId,Data} | empty
+%%      Tid = ffs_tid()
+%%      InodeI = inodei()
+%% @end
+%%--------------------------------------------------------------------
+flush_cache(Tid,InodeI) when is_integer(InodeI) ->
+    flush_cache(Tid,ffs_fat:lookup(Tid,InodeI));
+flush_cache(_Tid,#ffs_inode{ write_cache = undefined }) ->
+    empty;
+flush_cache(Tid,#ffs_inode{ inode = INodeI, write_cache = Data } = Inode) ->
+    {M,F} = ffs_lib:get_value(chunkid_mfa,Tid#ffs_tid.config),
+    ChunkId = M:F(Data),
+    {chunk,ChunkId,Data};
+flush_cache(_Tid,Else) ->
+    Else.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -198,11 +267,11 @@ get_stats(Name) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([State,_Args]) ->
-    process_flag(trap_exit,true),
+init(Name) ->
     Stats = [{total_mem,0},
 	     {free_mem,0},
 	     {free_inodes,1 bsl 32 - 1}],
+    ffs_config:write({fs_stats, Name}, Stats), 
     
     Config = [{block_size,512},
 	      {inode_limit,1 bsl 32},
@@ -213,15 +282,15 @@ init([State,_Args]) ->
               {uid,-1},
               {gid,-1},
               {mode,755}],
+    ffs_config:write({fs_config, Name}, Config), 
     
-    Tid = ffs_fat:init(State#state.name,
+    Tid = ffs_fat:init(list_to_atom(Name),
 		       ffs_lib:get_value(chunk_size,Config),
 		       ffs_lib:get_value(uid,Config),
 		       ffs_lib:get_value(gid,Config),
 		       ffs_lib:get_value(mode,Config)),
-    
-    NewState = State#state{ fat = Tid, stats = Stats, config = Config },
-    {ok, NewState}.
+    ffs_config:write({fs_tid, Name}, Tid), 
+    ok.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -237,12 +306,6 @@ init([State,_Args]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({list, InodeI}, _From, State) ->
-	Links = ffs_fat:list(State#state.fat, InodeI),
-	List = lists:map(fun(#ffs_link{ name = Name, to = To }) ->
-					{Name,ffs_fat:lookup(State#state.fat,To)}
-		end,Links),
-    {reply, List , State};
 handle_call({lookup, Inode}, _From, State) ->
     {reply, ffs_fat:lookup(State#state.fat, Inode), State};
 handle_call({find, ParentInodeI, Path}, _From, State) ->
@@ -365,6 +428,9 @@ store_chunk(ChunkId,Data,_Config) ->
 	io:format("Storing ~p\n",[ChunkId]),
 	ffs_chunk_server:write(ChunkId,Data),
 	ok.
+
+delete_chunk(ChunkId,_Config) ->
+    ok.
 
 read_reply({ok,<<Data/binary>>},{<<Acc/binary>>,[],Size,Offset,Fun}) ->
 
