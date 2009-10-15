@@ -311,18 +311,10 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast({ read_async, ChunkId, Fun}, State) ->
-    % Find Chunk information from ChunkId
+    %% Find Chunk information from ChunkId
     case ets:lookup(chunks, ChunkId) of
         [#chunk{storages = StorageUrls}] ->
-            % Get the prefered storage to fetch from
-            case choose_storage(StorageUrls) of
-                #storage{pid = Pid} ->
-                    % Send a read cast to that storage and return
-                    % (the storage will reply with data or error)
-                    gen_server:cast(Pid, {read_async, ChunkId, Fun});
-                not_found ->
-                    Fun({error, enoent})
-            end;
+            read_async_int(StorageUrls, ChunkId, Fun, no_error);
         [] ->
             Fun({error, enoent})
     end,
@@ -514,8 +506,7 @@ choose_storage([StorageUrl | Rest]) ->
     end.
 
 choose_write_storage([]) -> no_storage;
-choose_write_storage(Storages) ->
-    lists:nth(random:uniform(length(Storages)), Storages).
+choose_write_storage(Storages) ->    lists:nth(random:uniform(length(Storages)), Storages).
 
 write_to_one([], _ChunkId, _Data) ->
     {error, failed_to_write};
@@ -531,4 +522,18 @@ write_to_one(Storages, ChunkId, Data) ->
                     S2 = lists:delete(S, Storages),
                     write_to_one(S2, ChunkId, Data)
             end
+    end.
+
+
+read_async_int([], _ChunkId, Fun, _Error) ->
+    Fun({error, enoent});
+read_async_int([StorageUrl | R], ChunkId, Fun, _) -> 
+    case ets:lookup(storages, StorageUrl) of
+	[#storage{pid=Pid}] ->
+	    %% Send a read cast to that storage and return
+	    %% (the storage will reply with data or error)
+	    ErrorFun = fun(Error) -> read_async_int(R, ChunkId, Fun, Error) end,
+	    gen_server:cast(Pid, {read_async, ChunkId, Fun, ErrorFun});
+	_Else ->
+	    read_async_int(R, ChunkId, Fun, {error, {storage_not_found, StorageUrl}})
     end.
