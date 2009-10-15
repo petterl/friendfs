@@ -56,17 +56,24 @@ start(Type) ->
 start(_Type, _Args) ->
     {ok,ConfigPath} = application:get_env(friendfs,config_path),
     {ok,DefaultsPath} = application:get_env(friendfs,config_default_path),
+    ffs_config:init(),
     
-    Config = case ffs_lib:read_config(ConfigPath,DefaultsPath) of
-		 {ok,Config0} ->
-		     io:format("Loading configuration ~p\n",[Config0]),
-		     Config0;
-		 _Else ->
-		     io:format("Could not read config file!"),
-		     exit(1)
-	     end,
+    case ffs_config:parse_config(ConfigPath) of
+	ok ->
+	    io:format("Loading configuration\n",[]);
+	_Else ->
+	    io:format("Could not read config file!"),
+	    exit(1)
+    end,
     
-    friendfs_sup:start_link(Config).
+    init_filesystems(),
+    friendfs_sup:start_link([]).
+
+init_filesystems() ->
+    ffs_fat:init_counters(),
+    lists:foreach(fun({{"Filesystem",Name},_Args}) ->
+			  ffs_filesystem:init(Name)
+		  end, ffs_config:get_filesystems()).
 
 %%--------------------------------------------------------------------
 %% @private

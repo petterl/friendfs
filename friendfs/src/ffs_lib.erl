@@ -117,7 +117,7 @@ parse_config(Path) ->
     case file:read_file(Path) of
 	{ok,Bin} -> 
 	    Scan = scan_config_str(binary_to_list(Bin),1),
-	    ffs_config:parse(Scan);
+	    ffs_config_parse:parse(Scan);
 	Error -> {error,?MODULE,parse_config,Error}
     end.
 	
@@ -125,7 +125,7 @@ parse_defaults(Path) ->
     case file:read_file(Path) of
 	{ok,Bin} -> 
 	    Scan = scan_config_str(binary_to_list(Bin),1),
-	    ffs_config:parse(Scan);
+	    ffs_config_parse:parse(Scan);
 	Error -> {error,?MODULE,parse_config,Error}
     end.
 	

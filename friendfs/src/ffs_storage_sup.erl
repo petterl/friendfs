@@ -29,7 +29,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link(Args) ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, [Args]).
+    supervisor:start_link({local, ?SERVER}, ?MODULE, Args).
 
 connect_storage(Mod, Args) ->
     supervisor:start_child({local, ?SERVER}, [Mod, Args]).
@@ -44,16 +44,14 @@ connect_storage(Mod, Args) ->
 %% Initiates the supervisor
 %%
 %%--------------------------------------------------------------------
-init([Args]) ->
-	Specs = get_storages(Args,[]),
+init(_Args) ->
+    Specs = get_storages(ffs_config:get_filesystems(),[]),
     {ok, {{one_for_one, 10, 10},Specs}}.
 
 
-get_storages([{"Filesystem",Name,Args}|T],Acc) ->
+get_storages([{{"Filesystem",Name},Args}|T],Acc) ->
 	NewAcc = get_storages(list_to_atom(Name),Args,Acc),
 	get_storages(T,NewAcc);
-get_storages([_|T],Acc) ->
-	get_storages(T,Acc);
 get_storages([],Acc) ->
 	Acc.
 get_storages(FSName,[{"Storage",Url}|T],Acc) ->

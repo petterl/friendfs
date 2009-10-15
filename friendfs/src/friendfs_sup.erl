@@ -32,15 +32,10 @@ init(Args) ->
 	        {ffs_storage_sup, start_link, [Args]},
 	        permanent, 10000, supervisor, [ffs_storage_sup]},
 
-	Filesystem =
-		{ffs_filestore_sup,
-	        {ffs_filesystem_sup, start_link, [Args]},
-	        permanent, 10000, supervisor, [ffs_filestore_sup]},
-
-	Mountpoint =
-	    {ffs_mountpoint_sup,
-	        {ffs_mountpoint_sup, start_link, []},
-	        permanent, 10000, supervisor, [ffs_mountpoint_sup]},
-
+    Mountpoint =
+	{ffs_mountpoint_sup,
+	 {ffs_mountpoint_sup, start_link, []},
+	 permanent, 10000, supervisor, [ffs_mountpoint_sup]},
+    
     {ok, {{one_for_one, 3, 10},
-	    [ChunkServer,Filesystem,Storage,Mountpoint,ChunkReplicator]}}.
+	    [ChunkServer,Storage,Mountpoint,ChunkReplicator]}}.
