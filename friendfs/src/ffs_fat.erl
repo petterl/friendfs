@@ -537,7 +537,7 @@ flush_cache(_Tid,#ffs_inode{ write_cache = undefined }) ->
 flush_cache(Tid,#ffs_inode{ write_cache = Data } = Inode) ->
     {M,F} = ffs_lib:get_value(chunkid_mfa,Tid#ffs_tid.config),
     ChunkId = M:F(Data),
-    NewInode = Inode#ffs_inode{ chunkids = [ChunkId|Inode#ffs_inode.chunkids],
+    NewInode = Inode#ffs_inode{ chunkids = Inode#ffs_inode.chunkids ++ [ChunkId],
 				write_cache = undefined },
     ets:insert(Tid#ffs_tid.inode,NewInode),
     {chunk,ChunkId,Data};

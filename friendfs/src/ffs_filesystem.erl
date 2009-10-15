@@ -44,8 +44,7 @@
 -record(state, {name, fat, stats, config}).
 
 %%%===================================================================
-%%% API
-%%%===================================================================
+%%% API%%%===================================================================
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -313,7 +312,7 @@ handle_call(_Request, _From, State) ->
 handle_cast({read,InodeI,Size,Offset,Fun},State) ->
     {NewOffset,ChunkIds} = ffs_fat:read(State#state.fat,InodeI,Size,Offset),
 
-    read_reply({ok,<<>>},{<<>>,ChunkIds,NewOffset,Fun}),
+    read_reply({ok,<<>>},{<<>>,ChunkIds,Size,NewOffset,Fun}),
     {noreply,State};
 handle_cast(_Msg, State) ->
     io:format("~p: Unknown handle_cast(~p,~p) call\n",[?MODULE,_Msg,State]),
@@ -367,24 +366,26 @@ store_chunk(ChunkId,Data,_Config) ->
 	ffs_chunk_server:write(ChunkId,Data),
 	ok.
 
-read_reply({ok,<<Data/binary>>},{<<Acc/binary>>,[],Offset,Fun}) ->
+read_reply({ok,<<Data/binary>>},{<<Acc/binary>>,[],Size,Offset,Fun}) ->
 
     %% Remove offset data
-    <<_Head:Offset/binary,NewAcc/binary>> = Acc,
+    <<_Head:Offset/binary,NewData:Size/binary,_Rest/binary>> = 
+	<<Acc/binary,Data/binary>>,
     
-    Fun(<<NewAcc/binary,Data/binary>>);
+    Fun(<<NewData/binary>>);
 read_reply({ok,<<Data/binary>>},
 	   {<<Acc/binary>>,
 	    [{chunk,ChunkId}|T],
+	    Size,
 	    Offset,
 	    Fun}) ->
     NewAcc = <<Acc/binary,Data/binary>>,
     
     ffs_chunk_server:read_async(
       ChunkId,fun(Data) ->
-		      read_reply(Data,{NewAcc,T,Offset,Fun})
+		      read_reply(Data,{NewAcc,T,Size,Offset,Fun})
 	      end);
-read_reply({error,Error},{_Acc,_Chunks,_Offset,Fun}) ->
+read_reply({error,Error},{_Acc,_Chunks,_Size,_Offset,Fun}) ->
     Fun({error,Error}).
 
 
