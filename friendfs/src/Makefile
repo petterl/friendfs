@@ -53,6 +53,6 @@ $(EBIN)/%.app:%.appSrc
 $(DBG_DIR)/%.beam:%.erl $(TEST_DIR)/%.hrl
 	@erlc -I $(TEST_DIR) -W $(ERL_COMPILE_FLAGS) -DTEST -o $(DBG_DIR)/ $<
 	@echo " * Testing $(basename $(notdir $@))"
-	@erl -boot start_clean -noshell -pa dbg/ -s eunit test $(basename $<) -s init stop
+	@erl -boot start_clean -noshell -pz $(EBIN) -pa $(DBG_DIR) -s eunit test $(basename $<) -s init stop
 
 test:all $(DBG_DIR) $(TEST_OBJECTS)
