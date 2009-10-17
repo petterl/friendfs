@@ -111,7 +111,9 @@ access_async(Ctx,InodeI,Mask,State) ->
 	_Inode when Mask == ?F_OK ->
 	  #fuse_reply_err{err=ok};
 	Inode ->
-	  #fuse_reply_err{err=get_access(Ctx,Mask,Inode)}
+	  UpdateInode = Inode#ffs_inode{ uid = get_uid(Inode#ffs_inode.uid,State),
+									 gid = get_gid(Inode#ffs_inode.gid,State)},
+	  #fuse_reply_err{err=get_access(Ctx,Mask,UpdateInode)}
   end.
 	 
 %% Check rights for owner
@@ -737,7 +739,7 @@ unlink_async(Ctx, ParentI, Name, State) ->
 %% @end
 %%--------------------------------------------------------------------
 init({_MountPoint,DefUid,DefGid,FfsOpts}) ->
-    Filesystem = list_to_atom(proplists:get_value("fs",FfsOpts)),
+    Filesystem = proplists:get_value("fs",FfsOpts),
 
     {ok, #state{ filesystem = Filesystem,
 		 default_gid = DefGid,
@@ -835,19 +837,8 @@ stat(#ffs_inode{ inode = Inode, gid = Gid, uid = Uid,
     Config = ffs_filesystem:get_config(State#state.filesystem),
     BSize = ffs_lib:get_value(Config,block_size),
 
-    NewUid = if
-		 Uid == -1 ->
-		     State#state.default_uid;
-		 true ->
-		     Uid
-	     end,
-
-    NewGid = if
-		 Gid == -1 ->
-		     State#state.default_gid;
-		 true ->
-		     Gid
-	     end,
+    NewUid = get_uid(Uid,State),
+    NewGid = get_gid(Gid,State),
 	
     #stat{
 %      st_dev = { 0, 0 },                  % ID of device containing file 
@@ -864,6 +855,16 @@ stat(#ffs_inode{ inode = Inode, gid = Gid, uid = Uid,
       st_mtime = to_unix(Mtime),          % time of last modification 
       st_ctime = to_unix(Ctime)           % time of last status change
      }.
+
+get_uid(-1,#state{ default_uid = Uid }) ->
+	Uid;
+get_uid(Uid,_) ->
+	Uid.
+
+get_gid(-1,#state{ default_gid = Gid }) ->
+	Gid;
+get_gid(Gid,_) ->
+	Gid.
 
 -define(MAP_BITS,[{?D,?S_IFDIR},
 				  {?F,?S_IFREG},

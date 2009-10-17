@@ -11,12 +11,11 @@
 %%%-------------------------------------------------------------------
 -module(ffs_filesystem).
 
--behaviour(gen_server).
-
 -include_lib("friendfs/include/friendfs.hrl").
 
 %% Filesystem API
--export([list/2,
+-export([init/1,
+	 list/2,
 	 read/5,
 	 write/4,
 	 flush/2,
@@ -28,20 +27,9 @@
 	 get_stats/1,
 	 create/6]).
 
-
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
-
-%% Filesystem callbacks
--export([read_reply/2]).
-
--define(SERVER, ?MODULE).
-
--record(state, {name, fat, stats, config}).
-
 %%%===================================================================
-%%% API%%%===================================================================
+%%% API
+%%%===================================================================
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -148,7 +136,7 @@ write_cache(Tid,InodeI,AppendData,Offset,Acc) ->
 %% @end
 %%--------------------------------------------------------------------
 flush(SrvName, InodeI ) ->
-    gen_server:call(SrvName, {flush, InodeI}).
+    ok.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -179,10 +167,9 @@ flush_cache(_Tid,Else) ->
 %%  create(Name, Parent, Name, Uid, Gid, Mode) -> ok | {error, Error}	
 %% @end
 %%--------------------------------------------------------------------
-create(SrvName, ParentI,Name,Uid,Gid,Mode) ->
-    gen_server:call(SrvName, {create,ParentI,Name,Uid,Gid,Mode}).
-
-
+create(FsName, ParentI, Name, Uid, Gid, Mode) ->
+	Tid = ffs_config:read({fs_tid, FsName}),
+    ffs_fat:create(Tid,ParentI,Name,Uid,Gid,Mode,0,0).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -192,8 +179,15 @@ create(SrvName, ParentI,Name,Uid,Gid,Mode) ->
 %%   delete(Name,ParentI, Name) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-delete(SrvName, ParentI,Name) ->
-    gen_server:call(SrvName, {delete, ParentI, Name}).
+delete(FsName, ParentI,Name) ->
+	Tid = ffs_config:read({fs_tid, FsName}),
+	case ffs_fat:unlink(Tid,ParentI,Name) of
+	{delete,Inode} ->
+	    [ffs_chunk_server:delete(ChunkId) ||
+		ChunkId <- Inode#ffs_inode.chunkids];
+	_Else ->
+	    ok
+    end.
 
 
 %%--------------------------------------------------------------------
@@ -204,8 +198,14 @@ delete(SrvName, ParentI,Name) ->
 %%   make_dir(Name,Path) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-make_dir(SrvName, ParentInodeI, Name, Mode) ->
-    gen_server:call(SrvName, {make_dir, ParentInodeI,Name,Mode}).
+make_dir(FsName, ParentInodeI, Name, Mode) ->
+	Tid = ffs_config:read({fs_tid, FsName}),
+    Parent = ffs_fat:lookup(Tid,ParentInodeI),
+
+    #ffs_inode{ gid = Gid, uid = Uid} = Parent,
+    
+    ffs_fat:make_dir(Tid, ParentInodeI, Name, Uid, Gid, Mode).
+	
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -215,8 +215,9 @@ make_dir(SrvName, ParentInodeI, Name, Mode) ->
 %%   lookup(Name,Inode) -> #ffs_node{} | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-lookup(Name,Inode) ->
-    gen_server:call(Name, {lookup, Inode}).
+lookup(FsName,InodeI) ->
+	Tid = ffs_config:read({fs_tid, FsName}),
+    ffs_fat:lookup(Tid, InodeI).
 
 
 %%--------------------------------------------------------------------
@@ -227,8 +228,12 @@ lookup(Name,Inode) ->
 %%   find(Name,Inode,Path) -> #ffs_node{} | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-find(Name,Inode,Path) ->
-    gen_server:call(Name, {find, Inode, Path}).
+find(FsName,ParentInodeI,Path) ->
+	Tid = ffs_config:read({fs_tid, FsName}),
+	case ffs_fat:find(Tid, ParentInodeI, Path) of
+		enoent -> enoent;
+		InodeI -> ffs_fat:lookup(Tid, InodeI)
+	end.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -239,7 +244,7 @@ find(Name,Inode,Path) ->
 %% @end
 %%--------------------------------------------------------------------
 get_config(Name) ->
-    gen_server:call(Name, get_config).
+    ffs_config:read({fs_config,Name}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -250,7 +255,7 @@ get_config(Name) ->
 %% @end
 %%--------------------------------------------------------------------
 get_stats(Name) ->
-    gen_server:call(Name, get_stats).
+	ffs_config:read({fs_stats,Name}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -291,134 +296,6 @@ init(Name) ->
 		       ffs_lib:get_value(mode,Config)),
     ffs_config:write({fs_tid, Name}, Tid), 
     ok.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling call messages
-%%
-%% @spec handle_call(Request, From, State) ->
-%%                                   {reply, Reply, State} |
-%%                                   {reply, Reply, State, Timeout} |
-%%                                   {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, Reply, State} |
-%%                                   {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
-handle_call({lookup, Inode}, _From, State) ->
-    {reply, ffs_fat:lookup(State#state.fat, Inode), State};
-handle_call({find, ParentInodeI, Path}, _From, State) ->
-    Ret = case ffs_fat:find(State#state.fat, ParentInodeI, Path) of
-              enoent -> enoent;
-              Inode -> ffs_fat:lookup(State#state.fat, Inode)
-          end,
-    {reply, Ret, State};
-handle_call(get_config, _From, State) ->
-    {reply,State#state.config, State};
-handle_call(get_stats, _From, State) ->
-    {reply,State#state.stats, State};
-handle_call({create,ParentI,Name,Uid,Gid,Mode}, _From, State) ->
-    NewInode = ffs_fat:create(State#state.fat,ParentI,Name,Uid,Gid,Mode,0,0),
-    {reply,NewInode,State};
-handle_call({delete,ParentI,Name}, _From, State) ->
-    
-    case ffs_fat:unlink(State#state.fat,ParentI,Name) of
-	{delete,Inode} ->
-	    [ffs_chunk_server:delete(ChunkId) ||
-		ChunkId <- Inode#ffs_inode.chunkids];
-	_Else ->
-	    ok
-    end,
-    
-    {reply,ok,State};
-handle_call({write,InodeI,Data,Offset}, _From, State) ->
-	case ffs_fat:write_cache(State#state.fat,InodeI,Data,Offset) of
-		[] ->
-			ok;
- 		Chunks ->
-			[store_chunk(ChunkId,ChunkData,State#state.config) || {chunk,ChunkId,ChunkData} <- Chunks]
-	end,
-	{reply,ok,State};
-handle_call({flush,InodeI}, _From, State) ->
-	case ffs_fat:flush_cache(State#state.fat,InodeI) of
-		{chunk,ChunkId,ChunkData} ->
-			store_chunk(ChunkId,ChunkData,State#state.config);
-		_GetMore ->
-			ok
-	end,
-	{reply,ok,State};
-handle_call({make_dir, ParentI, Name, Mode}, _From, State) ->
-
-    Parent = ffs_fat:lookup(State#state.fat,ParentI),
-
-    #ffs_inode{ gid = Gid, uid = Uid} = Parent,
-    
-    NewInode = ffs_fat:make_dir(State#state.fat,ParentI, Name, Uid, Gid, Mode),
-    
-    {reply,NewInode,State};
-handle_call(_Request, _From, State) ->
-
-    Reply = ok,
-    {reply, Reply, State}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling cast messages
-%%
-%% @spec handle_cast(Msg, State) -> {noreply, State} |
-%%                                  {noreply, State, Timeout} |
-%%                                  {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
-handle_cast({read,InodeI,Size,Offset,Fun},State) ->
-    {NewOffset,ChunkIds} = ffs_fat:read(State#state.fat,InodeI,Size,Offset),
-
-    read_reply({ok,<<>>},{<<>>,ChunkIds,Size,NewOffset,Fun}),
-    {noreply,State};
-handle_cast(_Msg, State) ->
-    io:format("~p: Unknown handle_cast(~p,~p) call\n",[?MODULE,_Msg,State]),
-    {noreply, State}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling all non call/cast messages
-%%
-%% @spec handle_info(Info, State) -> {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
-handle_info(_Info, State) ->
-    io:format("~p: Unknown handle_info(~p,~p) call\n",[?MODULE,_Info,State]),
-    {noreply, State}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% This function is called by a gen_server when it is about to
-%% terminate. It should be the opposite of Module:init/1 and do any
-%% necessary cleaning up. When it returns, the gen_server terminates
-%% with Reason. The return value is ignored.
-%%
-%% @spec terminate(Reason, State) -> void()
-%% @end
-%%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
-    ok.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Convert process state when code is changed
-%%
-%% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
-%% @end
-%%--------------------------------------------------------------------
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
 
 %%%===================================================================
 %%% Internal functions

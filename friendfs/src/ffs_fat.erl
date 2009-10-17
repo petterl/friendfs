@@ -81,9 +81,9 @@ init(Name,ChunkSize,Uid,Gid,Mode) ->
     ets:insert(?COUNTER_TABLE,{Name,0}),
     Tid = #ffs_tid{ 
       name = Name,
-      inode = ets:new(Name,[{keypos,#ffs_inode.inode},set]),
-      link = ets:new(Name,[{keypos,#ffs_link.from},bag]),
-      xattr = ets:new(Name,[{keypos,#ffs_xattr.inode},set]),
+      inode = ets:new(Name,[{keypos,#ffs_inode.inode},public,set]),
+      link = ets:new(Name,[{keypos,#ffs_link.from},public,bag]),
+      xattr = ets:new(Name,[{keypos,#ffs_xattr.inode},public,set]),
       config = [{chunk_size,ChunkSize},{chunkid_mfa,{ffs_lib,get_chunkid}}]},
     create(Tid,1,"..",Uid,Gid,?D bor Mode,0,0),
     Tid.
