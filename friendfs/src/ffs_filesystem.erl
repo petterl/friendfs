@@ -121,8 +121,7 @@ write_cache(Tid,InodeI,AppendData,Offset,Acc) ->
 	    Chunk = flush_cache(Tid,NewInode#ffs_inode{ write_cache = NewData }),
 	    [Chunk|Acc];
 	true ->
-	    ffs_fat:write_cache(
-	      Tid,InodeI,NewData, size(AppendData) + Inode#ffs_inode.size),
+	    ffs_fat:write_cache( Tid, InodeI, NewData),
 	    Acc
     end.
 
@@ -135,8 +134,15 @@ write_cache(Tid,InodeI,AppendData,Offset,Acc) ->
 %%   flush(Name, InodeI) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-flush(SrvName, InodeI ) ->
-    ok.
+flush(FsName, InodeI ) ->
+    Tid = ffs_config:read({fs_tid, FsName}),
+    Config = ffs_config:read({fs_config, FsName}),
+    case flush_cache( Tid, InodeI) of
+	[] ->
+	    ok;
+	Chunks ->
+	    update_chunks(Chunks, Config)
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -155,7 +161,7 @@ flush_cache(_Tid,#ffs_inode{ write_cache = undefined }) ->
 flush_cache(Tid,#ffs_inode{ inode = INodeI, write_cache = Data } = Inode) ->
     {M,F} = ffs_lib:get_value(chunkid_mfa,Tid#ffs_tid.config),
     ChunkId = M:F(Data),
-    {chunk,ChunkId,Data};
+    {add_chunk,ChunkId,Data};
 flush_cache(_Tid,Else) ->
     Else.
 
