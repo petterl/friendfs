@@ -486,16 +486,17 @@ delete_xattr(#ffs_tid{}, _Inode, _Key) ->
 %% Description
 %%
 %% @spec
-%%   write_cache(Tid,InodeI,Data) -> ok | enoent
+%%   write_cache(Tid,InodeI,Chunk) -> ok | enoent
 %%      Tid = ffs_tid()
 %%      InodeI = inodei()
+%%      Chunk = {Id, Data}
+%%      Data = binary()
+%%      Id = integer()
 %% @end
 %%--------------------------------------------------------------------
-write_cache(Tid,INodeI,Data) ->
-    INode = lookup(Tid,INodeI),
-    ets:insert(Tid#ffs_tid.inode,INode#ffs_inode{ write_cache = Data }).
-    
-
+write_cache(Tid,InodeI,Chunk) ->
+    Inode = lookup(Tid,InodeI),
+    ets:insert(Tid#ffs_tid.inode,Inode#ffs_inode{ write_cache = Chunk }).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -507,11 +508,11 @@ write_cache(Tid,INodeI,Data) ->
 %%      InodeI = inodei()
 %% @end
 %%--------------------------------------------------------------------
-flush_cache(Tid,INodeI,ChunkIds,Size) ->
+flush_cache(Tid,INodeI,Chunk) ->
     INode = lookup(Tid,INodeI),
     ets:insert(Tid#ffs_tid.inode,INode#ffs_inode{ 
 				   size = Size,
-				   chunkids = ChunkIds,
+				   chunks = ChunkIds,
 				   write_cache = undefined }).
 
 
@@ -533,13 +534,13 @@ read(Tid,InodeI,Size,Offset) ->
     EndChunk = (Size+(Offset rem ChunkSize)-1) div ChunkSize,
     Inode = lookup(Tid,InodeI),
     {Offset rem ChunkSize,
-     read_chunks(0,StartChunk,EndChunk,Inode#ffs_inode.chunkids)}.
+     read_chunks(0,StartChunk,EndChunk,Inode#ffs_inode.chunks)}.
 
 
 read_chunks(Current,Current,Current,[H|_T]) ->
-    [{chunk,H}];
+    [H];
 read_chunks(Current,Current,EndChunk,[H|T]) ->
-    [{chunk,H}|read_chunks(Current+1,Current+1,EndChunk,T)];
+    [H|read_chunks(Current+1,Current+1,EndChunk,T)];
 read_chunks(Current,StartChunk,EndChunk,[_H|T]) ->
     read_chunks(Current+1,StartChunk,EndChunk,T);
 read_chunks(_Current,_StartChunk,_EndChunk,[]) ->

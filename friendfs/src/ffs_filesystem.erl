@@ -16,7 +16,7 @@
 %% Filesystem API
 -export([init/1,
 	 list/2,
-	 read/5,
+	 read/4,
 	 write/4,
 	 flush/2,
 	 delete/3,
@@ -50,18 +50,25 @@ list(FsName,INodeI) ->
 %% Read a chunk from a storage
 %%
 %% @spec
-%%   read(Name,Inode,Size,Offset,ReadCBFun) -> ok | {error, Error}
+%%   read(FsName,Inode,Size,Offset) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-read(Name, Inode, Size, Offset, ReadCBFun) ->
-    gen_server:cast(Name, {read, Inode, Size, Offset, ReadCBFun}).
-
+read(FsName, InodeI, Size, Offset) ->
+	Tid = ffs_config:read({fs_tid, FsName}),
+    {NewOffset,Chunks} = ffs_fat:read(Tid,InodeI,Size,Offset),
+	case read_chunks(Chunks) of
+		{ok,<<_Head:NewOffset/binary,Data:Size/binary,_Rest/binary>>} ->
+			{ok,Data};
+		{error,Reason} ->
+			{error,Reason}
+	end.
+	
 %%--------------------------------------------------------------------
 %% @doc
 %% Write a chunk to storages
 %%
 %% @spec
-%%   write(Name, Inode, Data, Offset) -> ok | {error, Error}
+%%   write(FsName, Inode, Data, Offset) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
 write(FsName, InodeI, Data, Offset) ->
@@ -190,7 +197,7 @@ delete(FsName, ParentI,Name) ->
 	case ffs_fat:unlink(Tid,ParentI,Name) of
 	{delete,Inode} ->
 	    [ffs_chunk_server:delete(ChunkId) ||
-		ChunkId <- Inode#ffs_inode.chunkids];
+		ChunkId <- Inode#ffs_inode.chunks];
 	_Else ->
 	    ok
     end.
@@ -315,27 +322,16 @@ store_chunk(ChunkId,Data,_Config) ->
 delete_chunk(ChunkId,_Config) ->
     ok.
 
-read_reply({ok,<<Data/binary>>},{<<Acc/binary>>,[],Size,Offset,Fun}) ->
+read_chunks(Chunks) ->
+	Data = ffs_lib:pmap(fun(#ffs_chunk{ chunkid = ChunkId }) ->
+			ffs_chunk_server:read(ChunkId)
+		end,Chunks),
+	read_chunks(Data,<<>>).
 
-    %% Remove offset data
-    <<_Head:Offset/binary,NewData:Size/binary,_Rest/binary>> = 
-	<<Acc/binary,Data/binary>>,
-    
-    Fun(<<NewData/binary>>);
-read_reply({ok,<<Data/binary>>},
-	   {<<Acc/binary>>,
-	    [{chunk,ChunkId}|T],
-	    Size,
-	    Offset,
-	    Fun}) ->
-    NewAcc = <<Acc/binary,Data/binary>>,
-    
-    ffs_chunk_server:read_async(
-      ChunkId,fun(Data) ->
-		      read_reply(Data,{NewAcc,T,Size,Offset,Fun})
-	      end);
-read_reply({error,Error},{_Acc,_Chunks,_Size,_Offset,Fun}) ->
-    Fun({error,Error}).
-
-
+read_chunks([{ok,<<Data/binary>>}|T],<<Acc/binary>>) ->
+	read_chunks(T,<<Acc/binary,Data/binary>>);
+read_chunks([{error,Reason}],_) ->
+	{error,Reason};
+read_chunks([],Acc) ->
+	Acc.
 

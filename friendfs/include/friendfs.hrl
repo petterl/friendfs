@@ -16,8 +16,8 @@
 	  atime,              %% now(): When the node was last accessed
 	  mtime,              %% now(): When the node was last modified
 	  refcount,           %% int(): How many links this node has to it
-	  chunkids = [],      %% [str()]: A list of all the chunkids of this inode
-	  write_cache         %% bin(): The current write cache
+	  chunks = [],        %% [#ffs_chunk()]: A list of all the chunks of this inode
+	  write_cache         %% {chunkid,bin()}: The current write cache
 	 }).
 
 -record(ffs_link,{
@@ -39,6 +39,11 @@
 	  link,     %% Table ID of the link ets table
 	  xattr,    %% Table ID of the xattr ets table
 	  config    %% Configuration for the fat
+	 }).
+
+-record(ffs_chunk,{
+	  id,       %% The place and id of this chunk within a inode
+	  chunkid   %% The chunkid of this chunk used by the ffs_chunk_server
 	 }).
 
 
