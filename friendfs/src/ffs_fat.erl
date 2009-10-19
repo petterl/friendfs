@@ -31,7 +31,7 @@
 	 set_xattr/4,
 	 delete_xattr/3,
 	 write_cache/3,
-	 flush_cache/4,
+	 flush_cache/3,
 	 read/4
 ]).
 
@@ -511,8 +511,8 @@ write_cache(Tid,InodeI,Chunk) ->
 flush_cache(Tid,INodeI,Chunk) ->
     INode = lookup(Tid,INodeI),
     ets:insert(Tid#ffs_tid.inode,INode#ffs_inode{ 
-				   size = Size,
-				   chunks = ChunkIds,
+				   size = 1,
+				   chunks = Chunk,
 				   write_cache = undefined }).
 
 
