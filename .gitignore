@@ -11,6 +11,7 @@ erl_crash.dump
 *#
 .#*
 .make.cache
+.nfs*
 bin
 erts-*
 lib/kernel-*
