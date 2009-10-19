@@ -4,10 +4,10 @@ digraph G{
     node [fontsize=8, style=point, width=.1, height=.1, color=grey, label=""];
     edge [arrowhead=none, style=filled, color=grey];
     
-    p1_0->p1_1;p1_1->p1_2;p1_2->p1_3;p1_3->p1_4;p1_4->p1_5;p1_5->p1_6;p1_6->p1_7;p1_7->p1_8;
-    p2_0->p2_1;p2_1->p2_2;p2_2->p2_3;p2_3->p2_4;p2_5->p2_6;p2_4->p2_5;p2_6->p2_7;p2_7->p2_8;
-    p3_0->p3_1;p3_1->p3_2;p3_2->p3_3;p3_3->p3_4;p3_4->p3_5;p3_5->p3_6;p3_6->p3_7;p3_7->p3_8;
-    p4_0->p4_1;p4_1->p4_2;p4_2->p4_3;p4_3->p4_4;p4_4->p4_5;p4_5->p4_6;p4_6->p4_7;p4_7->p4_8;
+    p1_0->p1_1->p1_2->p1_3->p1_4->p1_5->p1_6->p1_7->p1_8;
+    p2_0->p2_1->p2_2->p2_3->p2_4->p2_5->p2_6->p2_7->p2_8;
+    p3_0->p3_1->p3_2->p3_3->p3_4->p3_5->p3_6->p3_7->p3_8;
+    p4_0->p4_1->p4_2->p4_3->p4_4->p4_5->p4_6->p4_7->p4_8;
     
     p1_0 -> p2_0 -> p3_0 -> p4_0 [style=invis]
     {rank = same; edge[style=invis] p1_0 -> p2_0 -> p3_0 -> p4_0}
@@ -26,23 +26,23 @@ digraph G{
     // Node names   
     p1_0 [color=black, shape=box, label="fuserl"];
     p2_0 [color=black, shape=box, label="ffs_chunk_server"];
-    p3_0 [color=black, shape=box, label="ffs_storage_x"];
-    p4_0 [color=black, shape=box, label="ffs_storage_x"];
+    p3_0 [color=black, shape=box, label="ffs_storage 1"];
+    p4_0 [color=black, shape=box, label="ffs_storage 2"];
 
     // Transitions
     p1_1 -> p2_1 [label="read(ChunkId)"]
-    p2_1 [label="call"]
+    p2_1 [label="call server process"]
     p2_2 -> p3_2 [label="cast(read, ChunkId, Cxt)"]
     p3_2 [label="fail"]
     p3_3 -> p2_4 [label="cast(read_cb, Cxt, error)"]
-    p2_4 [label="find_next_storage"]
+    p2_4 [label="next_storage"]
     p2_4 -> p4_4 [label="cast(read, ChunkId, Cxt)"]
     p4_4 [label="data"]
     p4_5 -> p2_5 [label="cast(read_cb, Cxt, ok)"]
     p4_6 -> p1_6 [label="reply(Data)"]
 
-    p3_3 -> p2_3 [label="cast(read_cb, Cxt, error)", style=dashed]
-    p2_3 [label="no_more_storage", style=dashed]
+    p3_3 -> p2_3 [label="cast(read_cb, Cxt, error)"]
+    p2_3 [label="unavailible", style=dashed]
     p2_3 -> p1_3 [label="reply(error)", style=dashed]
 }
 
