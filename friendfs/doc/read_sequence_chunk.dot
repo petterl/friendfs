@@ -30,19 +30,19 @@ digraph G{
     p4_0 [color=black, shape=box, label="ffs_storage 2"];
 
     // Transitions
-    p1_1 -> p2_1 [label="read(ChunkId)"]
-    p2_1 [label="call server process"]
-    p2_2 -> p3_2 [label="cast(read, ChunkId, Cxt)"]
-    p3_2 [label="fail"]
-    p3_3 -> p2_4 [label="cast(read_cb, Cxt, error)"]
-    p2_4 [label="next_storage"]
-    p2_4 -> p4_4 [label="cast(read, ChunkId, Cxt)"]
-    p4_4 [label="data"]
-    p4_5 -> p2_5 [label="cast(read_cb, Cxt, ok)"]
-    p4_6 -> p1_6 [label="reply(Data)"]
+    p1_1 -> p2_1 [label="read(ChunkId)", color=red]
+    p2_1 [label="call server process", color=red]
+    p2_2 -> p3_2 [label="cast(read, ChunkId, Cxt)", color=blue]
+    p3_2 [label="fail", color=green]
+    p3_3 -> p2_4 [label="cast(read_cb, Cxt, error)", color=green]
+    p2_4 [label="next_storage", color=blue]
+    p2_4 -> p4_4 [label="cast(read, ChunkId, Cxt)", color=blue]
+    p4_4 [label="data", color=lightblue]
+    p4_5 -> p2_5 [label="cast(read_cb, Cxt, ok)", color=lightblue]
+    p4_6 -> p1_6 [label="reply(Data)", color=lightblue]
 
-    p3_3 -> p2_3 [label="cast(read_cb, Cxt, error)"]
-    p2_3 [label="unavailible", style=dashed]
-    p2_3 -> p1_3 [label="reply(error)", style=dashed]
+    p3_3 -> p2_3 [label="cast(read_cb, Cxt, error)", color=green]
+    p2_3 [label="unavailible", style=dashed, color=blue]
+    p2_3 -> p1_3 [label="reply(error)", style=dashed, color=blue]
 }
 
