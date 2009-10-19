@@ -8,7 +8,7 @@
 
 
 -export([split_url/1,urlsplit_scheme/1,read_config/2,parse_config/1,scan_config_str/2]).
--export([get_value/2,get_chunkid/1,get_hash/1,print_base64/1]).
+-export([get_value/2,get_chunkid/1,get_hash/1,print_base64/1,pmap/2]).
 -define(DELIMS,[$ ,$\n,$#,$>,$<,$\t]).
 
 split_url(Url) ->
@@ -296,3 +296,21 @@ get_value(Store,Key) when is_list(Store) ->
     proplists:get_value(Key, Store);
 get_value(Key,Store) ->
 	proplists:get_value(Key, Store).
+
+pmap(Fun,List) ->
+	pmap_spawn(Fun,0,self(),List).
+pmap_spawn(Fun,Id,Pid,[H|T]) ->
+	spawn(fun() -> 
+			Res = Fun(H),
+			Pid ! {pmap_ok,Id,Res}
+		end),
+	pmap_spawn(Fun,Id+1,Pid,T);
+pmap_spawn(_Fun,Id,_Pid,[]) ->
+	pmap_receive(Id-1,[]).
+pmap_receive(-1,Acc) ->
+	Acc;
+pmap_receive(Id,Acc) ->
+	receive
+		{pmap_ok,Id,Data} ->
+			pmap_receive(Id-1,[Data|Acc])
+	end.

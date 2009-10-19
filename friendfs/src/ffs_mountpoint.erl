@@ -56,9 +56,6 @@
 	  write/7
 	]).
 
-%% friendfs callbacks
--export([read_reply/2]).
-
 -record(state,{ filesystem, default_uid, default_gid }).
 
 -define(DBG(Str), io:format("Ctx = ~p\n"++Str++"\n",[Ctx])).
@@ -103,15 +100,20 @@ start_link(MountPoint,Options) ->
 %% and the second argument of type access_async_reply ().
 %% @end
 
-access(Ctx, InodeI, Mask, _Cont, State) -> 
+access(Ctx, InodeI, Mask, Cont, State) -> 
+    async(fun()-> access_async(Ctx,InodeI,Mask,State) end,Cont,State).
+
+access_async(Ctx,InodeI,Mask,State) ->
   ?DBG("access called"),
   case ffs_filesystem:lookup(State#state.filesystem,InodeI) of
 	enoent ->
-	  {#fuse_reply_err{err=enoent}, State};
+	  #fuse_reply_err{err=enoent};
 	_Inode when Mask == ?F_OK ->
-	  {#fuse_reply_err{err=ok},State};
+	  #fuse_reply_err{err=ok};
 	Inode ->
-	  {#fuse_reply_err{err=get_access(Ctx,Mask,Inode)},State}
+	  UpdateInode = Inode#ffs_inode{ uid = get_uid(Inode#ffs_inode.uid,State),
+									 gid = get_gid(Inode#ffs_inode.gid,State)},
+	  #fuse_reply_err{err=get_access(Ctx,Mask,UpdateInode)}
   end.
 	 
 %% Check rights for owner
@@ -159,14 +161,17 @@ get_access(_,_,_) ->
 %% and the second argument of type create_async_reply ().
 %% @end
 
-create (#fuse_ctx{ uid = Uid, gid = Gid} = Ctx, ParentI,
-	BinName, Mode, Fi, _Cont, State) -> 
+create(Ctx,ParentI,BinName,Mode,Fi,Cont,State) ->
+    async(fun()-> create_async(Ctx,ParentI,BinName,Mode,Fi,State) end,Cont,State).
+
+create_async(#fuse_ctx{ uid = Uid, gid = Gid} = Ctx, ParentI, 
+             BinName, Mode, Fi, State) -> 
     ?DBG("create called"),
     NewInode = ffs_filesystem:create(
 		 State#state.filesystem,ParentI,binary_to_list(BinName),
 		 Uid,Gid,to_ffs_mode(Mode)),
     Param = inode_to_param(NewInode,State),
-    {#fuse_reply_create{fuse_entry_param = Param, fuse_file_info = Fi},State}.
+    #fuse_reply_create{fuse_entry_param = Param, fuse_file_info = Fi}.
 
 %% @spec flush(Ctx::#fuse_ctx{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { flush_async_reply (), NewState } | { noreply, NewState } 
 %%  flush_async_reply () = #fuse_reply_err{}
@@ -182,11 +187,13 @@ create (#fuse_ctx{ uid = Uid, gid = Gid} = Ctx, ParentI,
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type flush_async_reply ().
 %% @end
+flush(Ctx, InodeI, Fi, Cont, State) ->
+    async(fun()-> flush_async(Ctx,InodeI,Fi,State) end,Cont,State).
 
-flush(Ctx, InodeI, _Fi, _Cont, State) -> 
+flush_async(Ctx, InodeI, _Fi, State) -> 
     ?DBG("flush called"),
 	ffs_filesystem:flush(State#state.filesystem,InodeI),
-    {#fuse_reply_err{err = ok},State}.
+    #fuse_reply_err{err = ok}.
 
 %% @spec forget(Ctx::#fuseCtx{}, Inode::integer (), Nlookup::integer (), Cont::continuation (), State) -> { forget_async_reply (), NewState } | { noreply, NewState } 
 %%  forget_async_reply () = #fuse_reply_none{}
@@ -195,9 +202,12 @@ flush(Ctx, InodeI, _Fi, _Cont, State) ->
 %% and the second argument of type forget_async_reply ().
 %% @end
 
-forget(Ctx, _Inode, _Nlookup, _Cont, State) -> 
+forget(Ctx, InodeI, Nlookup, Cont, State) ->
+	async(fun()-> forget_async(Ctx,InodeI,Nlookup,State) end, Cont, State).
+
+forget_async(Ctx, _Inode, _Nlookup, _State) -> 
   ?DBG("forget called"),
-  {#fuse_reply_none{},State}.
+  #fuse_reply_none{}.
 
 %% @spec fsync(Ctx::#fuseCtx{}, Inode::integer (), IsDataSync::bool (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { fsync_async_reply (), NewState } | { noreply, NewState } 
 %%  fsync_async_reply () = #fuse_reply_err{}
@@ -208,8 +218,12 @@ forget(Ctx, _Inode, _Nlookup, _Cont, State) ->
 %% and the second argument of type fsync_async_reply ().
 %% @end
 
-fsync(Ctx, _Inode, _IsDataSync, _Fi, _Cont, _State) -> ?DBG("fsync called"),
-  erlang:throw (not_implemented).
+fsync(Ctx, Inode, IsDataSync, Fi, Cont, State) -> 
+	async(fun() -> fsync_async(Ctx,Inode,IsDataSync,Fi,State) end,Cont,State).
+
+fsync_async(Ctx, _Inode, _IsDataSync, _Fi, _State) -> 
+	?DBG("fsync called"),
+	erlang:throw (not_implemented).
 
 %% @spec fsyncdir(Ctx::#fuseCtx{}, Inode::integer (), IsDataSync::bool (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { fsyncdir_async_reply (), NewState } | { noreply, NewState } 
 %%  fsyncdir_async_reply () = #fuse_reply_err{}
@@ -220,9 +234,12 @@ fsync(Ctx, _Inode, _IsDataSync, _Fi, _Cont, _State) -> ?DBG("fsync called"),
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type fsyncdir_async_reply ().
 %% @end
+fsyncdir(Ctx, Inode, IsDataSync, Fi, Cont, State) ->
+	async(fun() -> fsyncdir_async(Ctx,Inode,IsDataSync,Fi,State) end,Cont,State).
 
-fsyncdir(Ctx, _Inode, _IsDataSync, _Fi, _Cont, _State) -> ?DBG("fsyncdir called"),
-  erlang:throw (not_implemented).
+fsyncdir_async(Ctx, _Inode, _IsDataSync, _Fi, _State) -> 
+	?DBG("fsyncdir called"),
+	erlang:throw (not_implemented).
 
 %% @spec getattr(Ctx::#fuseCtx{}, Inode::integer (), Cont::continuation (), State) -> { getattr_async_reply (), NewState } | { noreply, NewState } 
 %%  getattr_async_reply () = #fuse_reply_attr{} | #fuse_reply_err{}
@@ -231,14 +248,17 @@ fsyncdir(Ctx, _Inode, _IsDataSync, _Fi, _Cont, _State) -> ?DBG("fsyncdir called"
 %% and the second argument of type getattr_async_reply ().
 %% @end
 
-getattr(Ctx, InodeI, _Cont, State) -> 
+getattr(Ctx, InodeI, Cont, State) -> 
+	async(fun() -> getattr_async(Ctx,InodeI,State) end,Cont,State).
+
+getattr_async(Ctx, InodeI, State) -> 
 	?DBG("getattr called"),
 	case ffs_filesystem:lookup(State#state.filesystem,InodeI) of
 		enoent ->
-			{#fuse_reply_err{ err = enoent}, State};
+			#fuse_reply_err{ err = enoent};
 		Inode ->
-			{#fuse_reply_attr{ attr= stat(Inode,State), 
-							   attr_timeout_ms=1000}, State}
+			#fuse_reply_attr{ attr= stat(Inode,State), 
+							   attr_timeout_ms=1000}
 	end.
 
 
@@ -248,9 +268,13 @@ getattr(Ctx, InodeI, _Cont, State) ->
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type getlk_async_reply ().
 %% @end
+getlk(Ctx, Inode, Fi, Lock, Cont, State) -> 
+	async(fun() -> getlk_async(Ctx, Inode, Fi, Lock,State) end, Cont, State).
 
-getlk(Ctx, _Inode, _Fi, _Lock, _Cont, _State) -> ?DBG("getlk called"),
-  erlang:throw (not_implemented).
+
+getlk_async(Ctx, _Inode, _Fi, _Lock, _State) -> 
+	?DBG("getlk called"),
+	erlang:throw (not_implemented).
 
 %% @spec getxattr(Ctx::#fuseCtx{}, Inode::integer (), Name::binary (), Size::integer (), Cont::continuation (), State) -> { getxattr_async_reply (), NewState } | { noreply, NewState } 
 %%  getxattr_async_reply () = #fuse_reply_buf{} | #fuse_reply_xattr{} | #fuse_reply_err{}
@@ -265,10 +289,13 @@ getlk(Ctx, _Inode, _Fi, _Lock, _Cont, _State) -> ?DBG("getlk called"),
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type getxattr_async_reply ().
 %% @end
-
 getxattr(Ctx, _Inode, _Name, _Size, _Cont, State) ->
+	async(fun() -> getxattr_async(Ctx, _Inode, _Name, _Size, State) end, _Cont, State).
+
+
+getxattr_async(Ctx, _Inode, _Name, _Size, _State) ->
     ?DBG("getxattr called"),
-    {#fuse_reply_xattr{ count = 0 },State}.
+    #fuse_reply_xattr{ count = 0 }.
 
 %% @spec link(Ctx::#fuseCtx{}, Ino::integer (), NewParent::integer (), NewName::binary (), Cont::continuation (), State) -> { link_async_reply (), NewState } | { noreply, NewState }
 %%  link_async_reply () = #fuse_reply_entry{} | #fuse_reply_err{}
@@ -277,9 +304,13 @@ getxattr(Ctx, _Inode, _Name, _Size, _Cont, State) ->
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type link_async_reply ().
 %% @end
+link(Ctx, Ino, NewParent, NewName, Cont, State) -> 
+	async(fun() -> link_async(Ctx, Ino, NewParent, NewName,State) end, Cont, State).
 
-link(Ctx, _Ino, _NewParent, _NewName, _Cont, _State) -> ?DBG("link called"),
-  erlang:throw (not_implemented).
+
+link_async(Ctx, _Ino, _NewParent, _NewName, _State) -> 
+	?DBG("link called"),
+	erlang:throw (not_implemented).
 
 %% @spec listxattr(Ctx::#fuseCtx{}, Ino::integer (), Size::integer (), Cont::continuation (), State) -> { listxattr_async_reply (), NewState } | { noreply, NewState }
 %%  listxattr_async_reply () = #fuse_reply_buf{} | #fuse_reply_xattr{} | #fuse_reply_err{}
@@ -295,9 +326,12 @@ link(Ctx, _Ino, _NewParent, _NewName, _Cont, _State) -> ?DBG("link called"),
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type listxattr_async_reply ().
 %% @end
+listxattr(Ctx, Ino, Size, Cont, State) -> 
+	async(fun() -> listxattr_async(Ctx, Ino, Size,State) end, Cont, State).
 
-listxattr(Ctx, _Ino, _Size, _Cont, State) -> ?DBG("listxattr called"),
-  {#fuse_reply_xattr{ count = 0 },State}.
+listxattr_async(Ctx, _Ino, _Size, _State) -> 
+	?DBG("listxattr called"),
+	#fuse_reply_xattr{ count = 0 }.
 
 %% @spec lookup(Ctx::#fuseCtx{}, ParentInode::integer (), Name::binary (), Cont::continuation (), State) -> { lookup_async_reply (), NewState } | { noreply, NewState }
 %%  lookup_async_reply () = #fuse_reply_entry{} | #fuse_reply_err{}
@@ -308,18 +342,19 @@ listxattr(Ctx, _Ino, _Size, _Cont, State) -> ?DBG("listxattr called"),
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type lookup_async_reply ().
 %% @end
+lookup(Ctx, ParentInodeI, BinName, Cont, State) ->
+	async(fun() -> lookup_async(Ctx, ParentInodeI, BinName, State) end, Cont, State).
 
-lookup(Ctx, ParentInodeI, BinName, _Cont, State) ->
+lookup_async(Ctx, ParentInodeI, BinName, State) ->
     ?DBG("lookup called"),
     Name = erlang:binary_to_list (BinName),
     case ffs_filesystem:find(State#state.filesystem,ParentInodeI,Name) of
 	enoent ->
-	    {#fuse_reply_err{ err = enoent },State};
+	    #fuse_reply_err{ err = enoent };
 	Inode ->
-	    {#fuse_reply_entry
+	    #fuse_reply_entry
 	     { fuse_entry_param =
-	       inode_to_param(Inode,State) },
-	     State}
+	       inode_to_param(Inode,State) }
     end.
     
   
@@ -332,18 +367,19 @@ lookup(Ctx, ParentInodeI, BinName, _Cont, State) ->
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type mkdir_async_reply ().
 %% @end
+mkdir(Ctx, ParentInodeI, Name, Mode, Cont, State) ->
+	async(fun() -> mkdir_async(Ctx, ParentInodeI, Name, Mode, State) end, Cont, State).
 
-mkdir(Ctx, ParentInodeI, Name, Mode, _Cont, State) ->
+mkdir_async(Ctx, ParentInodeI, Name, Mode, State) ->
     ?DBG("mkdir called"),
 
     Inode = ffs_filesystem:make_dir(State#state.filesystem,
 				    ParentInodeI,
 				    binary_to_list(Name),to_ffs_mode(Mode)),
     
-     {#fuse_reply_entry
+     #fuse_reply_entry
 	     { fuse_entry_param =
-	       inode_to_param(Inode,State) },
-	     State}.
+	       inode_to_param(Inode,State) }.
 
 %% @spec mknod(Ctx::#fuseCtx{}, ParentInode::integer (), Name::binary (), Mode::stat_mode (), Dev::device (), Cont::continuation (), State) -> { mknod_async_reply (), NewState } | { noreply, NewState }
 %%  device () = { Major::integer (), Minor::integer () }
@@ -355,9 +391,12 @@ mkdir(Ctx, ParentInodeI, Name, Mode, _Cont, State) ->
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type mknod_async_reply ().
 %% @end
+mknod(Ctx, ParentInode, Name, Mode, Dev, Cont, State) -> 
+	async(fun() -> mknod_async(Ctx, ParentInode, Name, Mode, Dev,State) end, Cont, State).
 
-mknod(Ctx, _ParentInode, _Name, _Mode, _Dev, _Cont, _State) -> ?DBG("mknod called"),
-  erlang:throw (not_implemented).
+mknod_async(Ctx, _ParentInode, _Name, _Mode, _Dev, _State) -> 
+	?DBG("mknod called"),
+	erlang:throw (not_implemented).
 
 %% @spec open(Ctx::#fuseCtx{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { open_async_reply (), NewState } | { noreply, NewState }
 %%   open_async_reply () = #fuse_reply_open{} | #fuse_reply_err{}
@@ -365,16 +404,18 @@ mknod(Ctx, _ParentInode, _Name, _Mode, _Dev, _Cont, _State) -> ?DBG("mknod calle
 %% should be called with Cont as first argument and the second argument of type
 %% open_async_reply ().
 %% @end
+open(Ctx, _Inode, Fi, Cont, State) ->
+	async(fun() -> open_async(Ctx, _Inode, Fi,State) end, Cont, State).
 
-open(Ctx, _Inode, _Fi, _Cont, State) ->
+open_async(Ctx, _Inode, _Fi, _State) ->
     ?DBG("open called"),
-    {#fuse_reply_open{ fuse_file_info = #fuse_file_info{flags = 66,
+    #fuse_reply_open{ fuse_file_info = #fuse_file_info{flags = 66,
 							writepage = false,
 							direct_io = false,
 							keep_cache = false,
 							flush = false,
 							fh = 0,
-							lock_owner = 0} },State}.
+							lock_owner = 0} }.
 
 %% @spec opendir(Ctx::#fuseCtx{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { opendir_async_reply (), NewState } | { noreply, NewState }
 %%   opendir_async_reply () = #fuse_reply_open{} | #fuse_reply_err{}
@@ -382,10 +423,12 @@ open(Ctx, _Inode, _Fi, _Cont, State) ->
 %% should be called with Cont as first argument and the second argument of type
 %% opendir_async_reply ().
 %% @end
+opendir(Ctx, Inode, Fi, Cont, State) ->
+	async(fun() -> opendir_async(Ctx, Inode, Fi,State) end, Cont, State).
 
-opendir(Ctx, _Inode, Fi, _Cont, State) ->
+opendir_async(Ctx, _Inode, Fi, _State) ->
     ?DBG("opendir called"),
-    {#fuse_reply_open{ fuse_file_info = Fi},State}.
+    #fuse_reply_open{ fuse_file_info = Fi}.
 
 %% @spec read(Ctx::#fuseCtx{}, Inode::integer (), Size::integer (), Offset::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { read_async_reply (), NewState } | { noreply, NewState }
 %%   read_async_reply () = #fuse_reply_buf{} | #fuse_reply_err{}
@@ -394,18 +437,14 @@ opendir(Ctx, _Inode, Fi, _Cont, State) ->
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type read_async_reply ().
 %% @end
-
 read(Ctx, InodeI, Size, Offset, Fi, Cont, State) ->
-    ?DBG("read called"),
-    ffs_filesystem:read(State#state.filesystem, InodeI, Size, Offset,
-			fun(Data) ->
-				read_reply(Data,{InodeI,Size,Offset,Cont})
-			end),
-    {noreply,State}.
+	async(fun() -> read_async(Ctx, InodeI, Size, Offset, Fi,State) end, Cont, State).
 
-read_reply(Data,{_InodeI,_Size,_Offset,Cont}) ->
-    fuserlsrv:reply(Cont, #fuse_reply_buf{ buf = Data,
-					   size = size(Data) }).
+read_async(Ctx, InodeI, Size, Offset, _Fi, State) ->
+    ?DBG("read called"),
+    {ok,Data} = ffs_filesystem:read(State#state.filesystem, InodeI, Size, Offset),
+	#fuse_reply_buf{ buf = Data,
+					 size = size(Data) }.
 
 %% @spec readdir(Ctx::#fuseCtx{}, Inode::integer (), Size::integer (), Offset::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { readdir_async_reply (), NewState } | { noreply, NewState }
 %%   readdir_async_reply () = #fuse_reply_direntrylist{} | #fuse_reply_err{}
@@ -420,8 +459,10 @@ read_reply(Data,{_InodeI,_Size,_Offset,Cont}) ->
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type readdir_async_reply ().
 %% @end
+readdir(Ctx, InodeI, Size, Offset, Fi, Cont, State) ->
+	async(fun() -> readdir_async(Ctx, InodeI, Size, Offset, Fi, State) end, Cont, State).
 
-readdir(Ctx, InodeI, _Size, Offset, _Fi, _Cont, State) ->
+readdir_async(Ctx, InodeI, _Size, Offset, _Fi, State) ->
     ?DBG("readdir called"),
     FfsList = ffs_filesystem:list(State#state.filesystem,InodeI),
     {List,_} = lists:mapfoldl(
@@ -431,7 +472,7 @@ readdir(Ctx, InodeI, _Size, Offset, _Fi, _Cont, State) ->
 				     stat = stat(Inode,State)},
 			  Offset+1}
 		 end,Offset+1,lists:nthtail(Offset,FfsList)),
-    {#fuse_reply_direntrylist{ direntrylist = List },State}.
+    #fuse_reply_direntrylist{ direntrylist = List }.
 
 
 %% @spec readlink(Ctx::#fuseCtx{}, Inode::integer (), Cont::continuation (), State) -> { readlink_async_reply (), NewState } | { noreply, NewState }
@@ -441,9 +482,12 @@ readdir(Ctx, InodeI, _Size, Offset, _Fi, _Cont, State) ->
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type readlink_async_reply ().
 %% @end
+readlink(Ctx, Inode, Cont, State) -> 
+	async(fun() -> readlink_async(Ctx, Inode, State) end, Cont, State).
 
-readlink(Ctx, _Inode, _Cont, _State) -> ?DBG("readlink called"),
-  erlang:throw (not_implemented).
+readlink_async(Ctx, _Inode, _State) -> 
+	?DBG("readlink called"),
+	erlang:throw (not_implemented).
 
 %% @spec release(Ctx::#fuseCtx{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { release_async_reply (), NewState } | { noreply, NewState } 
 %%  release_async_reply () = #fuse_reply_err{}
@@ -459,9 +503,12 @@ readlink(Ctx, _Inode, _Cont, _State) -> ?DBG("readlink called"),
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type release_async_reply ().
 %% @end
+release(Ctx, Inode, Fi, Cont, State) -> 
+	async(fun() -> release_async(Ctx, Inode, Fi, State) end, Cont, State).
 
-release(Ctx, _Inode, _Fi, _Cont, State) -> ?DBG("release called"),
-  {#fuse_reply_err{err = ok},State}.
+release_async(Ctx, _Inode, _Fi, _State) -> 
+  ?DBG("release called"),
+  #fuse_reply_err{err = ok}.
 
 %% @spec releasedir(Ctx::#fuseCtx{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { releasedir_async_reply (), NewState } | { noreply, NewState } 
 %%  releasedir_async_reply () = #fuse_reply_err{}
@@ -476,9 +523,12 @@ release(Ctx, _Inode, _Fi, _Cont, State) -> ?DBG("release called"),
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type releasedir_async_reply ().
 %% @end
+releasedir(Ctx, Inode, Fi, Cont, State) -> 
+	async(fun() -> releasedir_async(Ctx, Inode, Fi, State) end, Cont, State).
 
-releasedir(Ctx, _Inode, _Fi, _Cont, State) -> ?DBG("releasedir called"),
-  {#fuse_reply_err{err = ok},State}.
+releasedir_async(Ctx, _Inode, _Fi, _State) -> 
+	?DBG("releasedir called"),
+	#fuse_reply_err{err = ok}.
 
 %% @spec removexattr(Ctx::#fuseCtx{}, Inode::integer (), Name::binary (), Cont::continuation (), State) -> { removexattr_async_reply (), NewState } | { noreply, NewState }
 %%   removexattr_async_reply () = #fuse_reply_err{}
@@ -488,9 +538,12 @@ releasedir(Ctx, _Inode, _Fi, _Cont, State) -> ?DBG("releasedir called"),
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type removexattr_async_reply ().
 %% @end
+removexattr(Ctx, Inode, Name, Cont, State) -> 
+	async(fun() -> removexattr_async(Ctx, Inode, Name, State) end, Cont, State).
 
-removexattr(Ctx, _Inode, _Name, _Cont, _State) -> ?DBG("removexattr called"),
-  erlang:throw (not_implemented).
+removexattr_async(Ctx, _Inode, _Name, _State) -> 
+	?DBG("removexattr called"),
+	erlang:throw (not_implemented).
 
 %% @spec rename(Ctx::#fuseCtx{}, Parent::integer (), Name::binary (), NewParent::integer (), NewName::binary (), Cont::continuation (), State) -> { rename_async_reply (), NewState } | { noreply, NewState }
 %%   rename_async_reply () = #fuse_reply_err{}
@@ -499,10 +552,12 @@ removexattr(Ctx, _Inode, _Name, _Cont, _State) -> ?DBG("removexattr called"),
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type rename_async_reply ().
 %% @end
+rename(Ctx, Parent, Name, NewParent, NewName, Cont, State) ->
+	async(fun() -> rename_async(Ctx, Parent, Name, NewParent, NewName, State) end, Cont, State).
 
-rename(Ctx, _Parent, _Name, _NewParent, _NewName, _Cont, State) ->
+rename_async(Ctx, _Parent, _Name, _NewParent, _NewName, _State) ->
     ?DBG("rename called"),
-    {#fuse_reply_err{err = ok},State}.
+    #fuse_reply_err{err = ok}.
 
 %% @spec rmdir(Ctx::#fuseCtx{}, Inode::integer (), Name::binary (), Cont::continuation (), State) -> { rmdir_async_reply (), NewState } | { noreply, NewState }
 %%   rmdir_async_reply () = #fuse_reply_err{}
@@ -511,9 +566,12 @@ rename(Ctx, _Parent, _Name, _NewParent, _NewName, _Cont, State) ->
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type rmdir_async_reply ().
 %% @end
+rmdir(Ctx, Inode, Name, Cont, State) -> 
+	async(fun() -> rmdir_async(Ctx, Inode, Name, State) end, Cont, State).
 
-rmdir(Ctx, _Inode, _Name, _Cont, _State) -> ?DBG("rmdir called"),
-  erlang:throw (not_implemented).
+rmdir_async(Ctx, _Inode, _Name, _State) -> 
+	?DBG("rmdir called"),
+	erlang:throw (not_implemented).
 
 %% @spec setattr(Ctx::#fuseCtx{}, Inode::integer (), Attr::#stat{}, ToSet::integer (), Fi::maybe_fuse_file_info (), Cont::continuation (), State) -> { setattr_async_reply (), NewState } | { noreply, NewState }
 %%   maybe_fuse_file_info () = #fuse_file_info{} | null
@@ -526,8 +584,10 @@ rmdir(Ctx, _Inode, _Name, _Cont, _State) -> ?DBG("rmdir called"),
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type setattr_async_reply ().
 %% @end
+setattr(Ctx, InodeI, Attr, ToSet, Fi, Cont, State) -> 
+	async(fun() -> setattr_async(Ctx, InodeI, Attr, ToSet, Fi, State) end, Cont, State).
 
-setattr(Ctx, InodeI, Attr, ToSet, _Fi, _Cont, State) -> 
+setattr_async(Ctx, InodeI, _Attr, _ToSet, _Fi, State) -> 
   ?DBG("setattr called"),
   lists:foreach(fun %(?FUSE_SET_ATTR_MTIME) when ?FUSE_SET_ATTR_MTIME bor ToSet =/= 0 ->
 					%	ffs_filesystem:modify(State#state.filesystem,InodeI,unix_to_now(Attr#stat.st_mtime));
@@ -542,7 +602,7 @@ setattr(Ctx, InodeI, Attr, ToSet, _Fi, _Cont, State) ->
 						?FUSE_SET_ATTR_ATIME,
 						?FUSE_SET_ATTR_MTIME]),
 	Inode = ffs_filesystem:lookup(State#state.filesystem,InodeI),
-  {#fuse_reply_attr{ attr = stat(Inode,State), attr_timeout_ms = 0 },State}.
+  #fuse_reply_attr{ attr = stat(Inode,State), attr_timeout_ms = 0 }.
 
 %% @spec setlk(Ctx::#fuseCtx{}, Inode::integer (), Fi::#fuse_file_info{}, Lock::#flock{}, Sleep::bool(), Cont::continuation (), State) -> { setlk_async_reply (), NewState } | { noreply, NewState }
 %%   setlk_async_reply () = #fuse_reply_err{}
@@ -553,9 +613,12 @@ setattr(Ctx, InodeI, Attr, ToSet, _Fi, _Cont, State) ->
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type setlk_async_reply ().
 %% @end
+setlk(Ctx, Inode, Fi, Lock, Sleep, Cont, State) -> 
+	async(fun() -> setlk_async(Ctx, Inode, Fi, Lock, Sleep, State) end, Cont, State).
 
-setlk(Ctx, _Inode, _Fi, _Lock, _Sleep, _Cont, _State) -> ?DBG("setlk called"),
-  erlang:throw (not_implemented).
+setlk_async(Ctx, _Inode, _Fi, _Lock, _Sleep, _State) -> 
+	?DBG("setlk called"),
+	erlang:throw (not_implemented).
 
 %% @spec setxattr(Ctx::#fuseCtx{}, Inode::integer (), Name::binary (), Value::binary (), Flags::xattr_flags (), Cont::continuation (), State) -> { setxattr_async_reply (), NewState } | { noreply, NewState }
 %%   setxattr_async_reply () = #fuse_reply_err{}
@@ -568,9 +631,12 @@ setlk(Ctx, _Inode, _Fi, _Lock, _Sleep, _Cont, _State) -> ?DBG("setlk called"),
 %% with Cont as first argument
 %% and the second argument of type setxattr_async_reply ().
 %% @end
+setxattr(Ctx, Inode, Name, Value, Flags, Cont, State) -> 
+	async(fun() -> setxattr_async(Ctx, Inode, Name, Value, Flags, State) end, Cont, State).
 
-setxattr(Ctx, _Inode, _Name, _Value, _Flags, _Cont, State) -> ?DBG("setxattr called"),
-  {#fuse_reply_err{err = ok},State}.
+setxattr_async(Ctx, _Inode, _Name, _Value, _Flags, _State) -> 
+	?DBG("setxattr called"),
+	#fuse_reply_err{err = ok}.
 
 %% @spec statfs(Ctx::#fuseCtx{}, Inode::integer (), Cont::continuation (), State) -> { statfs_async_reply (), NewState } | { noreply, NewState }
 %%   statfs_async_reply () = #fuse_reply_statfs{} | #fuse_reply_err{}
@@ -579,8 +645,10 @@ setxattr(Ctx, _Inode, _Name, _Value, _Flags, _Cont, State) -> ?DBG("setxattr cal
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type statfs_async_reply ().
 %% @end
+statfs(Ctx, Inode, Cont, State) ->
+	async(fun() -> statfs_async(Ctx, Inode, State) end, Cont, State).
 
-statfs(Ctx, _Inode, _Cont, #state{ filesystem = FS} = State) ->
+statfs_async(Ctx, _Inode, #state{ filesystem = FS}) ->
     ?DBG("statfs called"),
     
     Config = ffs_filesystem:get_config(FS),
@@ -607,7 +675,7 @@ statfs(Ctx, _Inode, _Cont, #state{ filesystem = FS} = State) ->
 		  f_fsid = FilesystemId,
 		  f_flag = MntOpts,
 		  f_namemax = MaxFilenameLength },
-    { #fuse_reply_statfs{ statvfs = S }, State }.
+    #fuse_reply_statfs{ statvfs = S }.
 
 
 %% @spec symlink(Ctx::#fuseCtx{}, Link::binary (), Inode::integer (), Name::binary (), Cont::continuation (), State) -> { symlink_async_reply (), NewState } | { noreply, NewState }
@@ -618,9 +686,12 @@ statfs(Ctx, _Inode, _Cont, #state{ filesystem = FS} = State) ->
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type symlink_async_reply ().
 %% @end
+symlink(Ctx, Link, Inode, Name, Cont, State) -> 
+	async(fun() -> symlink_async(Ctx, Link, Inode, Name, State) end, Cont, State).
 
-symlink(Ctx, _Link, _Inode, _Name, _Cont, _State) -> ?DBG("symlink called"),
-  erlang:throw (not_implemented).
+symlink_async(Ctx, _Link, _Inode, _Name, _State) -> 
+	?DBG("symlink called"),
+	erlang:throw (not_implemented).
 
 %% @spec write(Ctx::#fuseCtx{}, Inode::integer (), Data::binary (), Offset::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { write_async_reply (), NewState } | { noreply, NewState }
 %%   write_async_reply () = #fuse_reply_write{} | #fuse_reply_err{}
@@ -629,11 +700,13 @@ symlink(Ctx, _Link, _Inode, _Name, _Cont, _State) -> ?DBG("symlink called"),
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type write_async_reply ().
 %% @end
+write(Ctx, InodeI, Data, Offset, Fi, Cont, State) -> 
+	async(fun() -> write_async(Ctx, InodeI, Data, Offset, Fi, State) end, Cont, State).
 
-write(Ctx, InodeI, Data, Offset, _Fi, _Cont, State) -> 
+write_async(Ctx, InodeI, Data, Offset, _Fi, State) -> 
   ?DBG("write called"),	
   ffs_filesystem:write(State#state.filesystem,InodeI,Data,Offset),
-  {#fuse_reply_write{ count = size(Data) },State}.
+  #fuse_reply_write{ count = size(Data) }.
 
 %% @spec unlink(Ctx::#fuseCtx{}, Inode::integer (), Name::binary (), Cont::continuation (), State) -> { unlink_async_reply (), NewState } | { noreply, NewState }
 %%   unlink_async_reply () = #fuse_reply_err{}
@@ -642,11 +715,13 @@ write(Ctx, InodeI, Data, Offset, _Fi, _Cont, State) ->
 %% eventually {@link fuserlsrv:reply/2. fuserlsrv:reply/2} should be called with Cont as first argument
 %% and the second argument of type unlink_async_reply ().
 %% @end
+unlink(Ctx, ParentI, Name, Cont, State) ->
+	async(fun() -> unlink_async(Ctx, ParentI, Name, State) end, Cont, State).
 
-unlink(Ctx, ParentI, Name, _Cont, State) ->
+unlink_async(Ctx, ParentI, Name, State) ->
     ?DBG("unlink called"),
     ffs_filesystem:delete(State#state.filesystem,ParentI,binary_to_list(Name)),
-    { #fuse_reply_err{err = ok}, State}.
+    #fuse_reply_err{err = ok}.
 
 %%%===================================================================
 %%% fuserlsrv general callbacks
@@ -663,10 +738,9 @@ unlink(Ctx, ParentI, Name, _Cont, State) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init({MountPoint,DefUid,DefGid,FfsOpts}) ->
-    Filesystem = list_to_atom(proplists:get_value("fs",FfsOpts)),
+init({_MountPoint,DefUid,DefGid,FfsOpts}) ->
+    Filesystem = proplists:get_value("fs",FfsOpts),
 
-    link(whereis(Filesystem)),
     {ok, #state{ filesystem = Filesystem,
 		 default_gid = DefGid,
 		 default_uid = DefUid }}.
@@ -739,6 +813,15 @@ to_unix({Mega,Secs,_Micro}) ->
 unix_to_now(Secs) ->
 	{Secs div 1000000, Secs rem 1000000,0}.
 	
+async(Fun,Cont,State) ->
+  spawn(fun() ->
+	Res = Fun(),
+	fuserlsrv:reply(Cont,Res)
+   end
+  ),
+  {noreply,State}.
+	
+	
 inode_to_param(#ffs_inode{inode = InodeI} = Inode,State) ->
 	#fuse_entry_param{ ino = InodeI,
 			  generation = 0,%element(3,now()),
@@ -754,19 +837,8 @@ stat(#ffs_inode{ inode = Inode, gid = Gid, uid = Uid,
     Config = ffs_filesystem:get_config(State#state.filesystem),
     BSize = ffs_lib:get_value(Config,block_size),
 
-    NewUid = if
-		 Uid == -1 ->
-		     State#state.default_uid;
-		 true ->
-		     Uid
-	     end,
-
-    NewGid = if
-		 Gid == -1 ->
-		     State#state.default_gid;
-		 true ->
-		     Gid
-	     end,
+    NewUid = get_uid(Uid,State),
+    NewGid = get_gid(Gid,State),
 	
     #stat{
 %      st_dev = { 0, 0 },                  % ID of device containing file 
@@ -783,6 +855,16 @@ stat(#ffs_inode{ inode = Inode, gid = Gid, uid = Uid,
       st_mtime = to_unix(Mtime),          % time of last modification 
       st_ctime = to_unix(Ctime)           % time of last status change
      }.
+
+get_uid(-1,#state{ default_uid = Uid }) ->
+	Uid;
+get_uid(Uid,_) ->
+	Uid.
+
+get_gid(-1,#state{ default_gid = Gid }) ->
+	Gid;
+get_gid(Gid,_) ->
+	Gid.
 
 -define(MAP_BITS,[{?D,?S_IFDIR},
 				  {?F,?S_IFREG},
