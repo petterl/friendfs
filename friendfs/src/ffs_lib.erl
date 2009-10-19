@@ -298,19 +298,19 @@ get_value(Key,Store) ->
 	proplists:get_value(Key, Store).
 
 pmap(Fun,List) ->
-	pmap_spawn(Fun,0,self(),List).
+    pmap_spawn(Fun,0,self(),List).
 pmap_spawn(Fun,Id,Pid,[H|T]) ->
-	spawn(fun() -> 
-			Res = Fun(H),
-			Pid ! {pmap_ok,Id,Res}
-		end),
-	pmap_spawn(Fun,Id+1,Pid,T);
+    spawn(fun() -> 
+		  Res = Fun(H),
+		  Pid ! {pmap_ok,Id,Res}
+	      end),
+    pmap_spawn(Fun,Id+1,Pid,T);
 pmap_spawn(_Fun,Id,_Pid,[]) ->
-	pmap_receive(Id-1,[]).
+    pmap_receive(Id-1,[]).
 pmap_receive(-1,Acc) ->
-	Acc;
+    Acc;
 pmap_receive(Id,Acc) ->
-	receive
-		{pmap_ok,Id,Data} ->
-			pmap_receive(Id-1,[Data|Acc])
-	end.
+    receive
+	{pmap_ok,Id,Data} ->
+	    pmap_receive(Id-1,[Data|Acc])
+    end.

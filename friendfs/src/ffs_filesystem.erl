@@ -40,9 +40,10 @@
 %% @end
 %%--------------------------------------------------------------------
 list(FsName,INodeI) ->
-    Links = ffs_fat:list(ffs_config:read({fs_tid, FsName}), INodeI),
+    Tid = ffs_config:read({fs_tid, FsName}),
+    Links = ffs_fat:list(Tid, INodeI),
     lists:map(fun(#ffs_link{ name = Name, to = To }) ->
-		      {Name,ffs_fat:lookup(ffs_config:read({fs_tid, FsName}),To)}
+		      {Name,ffs_fat:lookup(Tid, To)}
 	      end,Links).    
 
 %%--------------------------------------------------------------------
@@ -54,14 +55,14 @@ list(FsName,INodeI) ->
 %% @end
 %%--------------------------------------------------------------------
 read(FsName, InodeI, Size, Offset) ->
-	Tid = ffs_config:read({fs_tid, FsName}),
+    Tid = ffs_config:read({fs_tid, FsName}),
     {NewOffset,Chunks} = ffs_fat:read(Tid,InodeI,Size,Offset),
-	case read_chunks(Chunks) of
-		{ok,<<_Head:NewOffset/binary,Data:Size/binary,_Rest/binary>>} ->
-			{ok,Data};
-		{error,Reason} ->
-			{error,Reason}
-	end.
+    case read_chunks(Chunks) of
+	{ok,<<_Head:NewOffset/binary,Data:Size/binary,_Rest/binary>>} ->
+	    {ok,Data};
+	{error,Reason} ->
+	    {error,Reason}
+    end.
 	
 %%--------------------------------------------------------------------
 %% @doc
@@ -181,7 +182,7 @@ flush_cache(_Tid,Else) ->
 %% @end
 %%--------------------------------------------------------------------
 create(FsName, ParentI, Name, Uid, Gid, Mode) ->
-	Tid = ffs_config:read({fs_tid, FsName}),
+    Tid = ffs_config:read({fs_tid, FsName}),
     ffs_fat:create(Tid,ParentI,Name,Uid,Gid,Mode,0,0).
 
 %%--------------------------------------------------------------------
@@ -193,8 +194,8 @@ create(FsName, ParentI, Name, Uid, Gid, Mode) ->
 %% @end
 %%--------------------------------------------------------------------
 delete(FsName, ParentI,Name) ->
-	Tid = ffs_config:read({fs_tid, FsName}),
-	case ffs_fat:unlink(Tid,ParentI,Name) of
+    Tid = ffs_config:read({fs_tid, FsName}),
+    case ffs_fat:unlink(Tid,ParentI,Name) of
 	{delete,Inode} ->
 	    [ffs_chunk_server:delete(ChunkId) ||
 		ChunkId <- Inode#ffs_inode.chunks];
@@ -212,13 +213,13 @@ delete(FsName, ParentI,Name) ->
 %% @end
 %%--------------------------------------------------------------------
 make_dir(FsName, ParentInodeI, Name, Mode) ->
-	Tid = ffs_config:read({fs_tid, FsName}),
+    Tid = ffs_config:read({fs_tid, FsName}),
     Parent = ffs_fat:lookup(Tid,ParentInodeI),
-
+    
     #ffs_inode{ gid = Gid, uid = Uid} = Parent,
     
     ffs_fat:make_dir(Tid, ParentInodeI, Name, Uid, Gid, Mode).
-	
+
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -229,7 +230,7 @@ make_dir(FsName, ParentInodeI, Name, Mode) ->
 %% @end
 %%--------------------------------------------------------------------
 lookup(FsName,InodeI) ->
-	Tid = ffs_config:read({fs_tid, FsName}),
+    Tid = ffs_config:read({fs_tid, FsName}),
     ffs_fat:lookup(Tid, InodeI).
 
 
@@ -242,11 +243,11 @@ lookup(FsName,InodeI) ->
 %% @end
 %%--------------------------------------------------------------------
 find(FsName,ParentInodeI,Path) ->
-	Tid = ffs_config:read({fs_tid, FsName}),
-	case ffs_fat:find(Tid, ParentInodeI, Path) of
-		enoent -> enoent;
-		InodeI -> ffs_fat:lookup(Tid, InodeI)
-	end.
+    Tid = ffs_config:read({fs_tid, FsName}),
+    case ffs_fat:find(Tid, ParentInodeI, Path) of
+	enoent -> enoent;
+	InodeI -> ffs_fat:lookup(Tid, InodeI)
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -268,7 +269,7 @@ get_config(Name) ->
 %% @end
 %%--------------------------------------------------------------------
 get_stats(Name) ->
-	ffs_config:read({fs_stats,Name}).
+    ffs_config:read({fs_stats,Name}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -315,23 +316,23 @@ init(Name) ->
 %%%==================================================================
 
 store_chunk(ChunkId,Data,_Config) ->
-	io:format("Storing ~p\n",[ChunkId]),
-	ffs_chunk_server:write(ChunkId,Data),
-	ok.
+    io:format("Storing ~p\n",[ChunkId]),
+    ffs_chunk_server:write(ChunkId,Data),
+    ok.
 
 delete_chunk(ChunkId,_Config) ->
     ok.
 
 read_chunks(Chunks) ->
-	Data = ffs_lib:pmap(fun(#ffs_chunk{ chunkid = ChunkId }) ->
-			ffs_chunk_server:read(ChunkId)
-		end,Chunks),
-	read_chunks(Data,<<>>).
+    Data = ffs_lib:pmap(fun(#ffs_chunk{ chunkid = ChunkId }) ->
+				ffs_chunk_server:read(ChunkId)
+			end,Chunks),
+    read_chunks(Data,<<>>).
 
 read_chunks([{ok,<<Data/binary>>}|T],<<Acc/binary>>) ->
-	read_chunks(T,<<Acc/binary,Data/binary>>);
+    read_chunks(T,<<Acc/binary,Data/binary>>);
 read_chunks([{error,Reason}],_) ->
-	{error,Reason};
+    {error,Reason};
 read_chunks([],Acc) ->
-	Acc.
+    Acc.
 
