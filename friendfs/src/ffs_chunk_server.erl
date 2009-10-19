@@ -21,7 +21,7 @@
 -export([start/1]).
 
 %% Storage API
--export([read/1, read_async/2, write/2, write/3, delete/1, delete/2]).
+-export([read/1, write/2, write/3, delete/1, delete/2]).
 -export([write_replicate/2, update_storage/3]).
 -export([info/0]).
 
@@ -30,9 +30,17 @@
          terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE).
+-define(READ_TIMEOUT, 60000). % 60 sec read timeout 
 
--record(state, {storages = []  %% Registered storages
+-record(state, {storages = [],  %% Registered storages
+                sessions = []
                }).
+
+-record(session, {ref,
+                  chunk_id,
+                  caller_pid,
+                  remaining_storages = [],
+                  timer_ref}).
 
 %%====================================================================
 %% Typedefs
@@ -78,22 +86,7 @@ start(Config) ->
 %% @end
 %%--------------------------------------------------------------------
 read(ChunkId) ->
-    gen_server:call(?SERVER, {read, ChunkId}).
-
-%%--------------------------------------------------------------------
-%% @doc
-%% Read data from a chunk from any storage
-%% Respond by calling the callback function with the response
-%%
-%% @spec
-%%   read_async(ChunkId :: chunk_id(), Fun :: fun()) -> ok
-%%     Response = {ok, Data} | {error, Reason}
-%%     Reason   = enoent | eacces | eisdir | enotdir | enomem | atom()
-%% @end
-%%--------------------------------------------------------------------
-read_async(ChunkId, Fun) ->
-    gen_server:cast(?SERVER, {read_async, ChunkId, Fun}).
-
+    gen_server:call(?SERVER, {read, ChunkId}, infinity).
 
 %% --------------------------------------------------------------------
 %% @equiv write(ChunkId, Data, infinite)
@@ -223,11 +216,20 @@ handle_call({ read, ChunkId}, From, State) ->
         [#chunk{storages = StorageUrls}] ->
             % Get the prefered storage to fetch from
             case choose_storage(StorageUrls) of
-                #storage{pid = Pid} ->
+                #storage{url = Url, pid = Pid}->
                     % Send a read cast to that storage and return
                     % (the storage will reply with data or error)
-                    gen_server:cast(Pid, {read, ChunkId, From}),
-                    {noreply, State};
+                    Ref = make_ref(),
+                    gen_server:cast(Pid, {read, ChunkId, From, Ref}),
+                    StorageUrls2 = StorageUrls -- [Url],
+                    %% Add timeout callback if storage does not responds in time
+                    {ok, Tref} =
+                        timer:apply_after(?READ_TIMEOUT, gen_server, cast,
+                                          [?MODULE, {read_callback, Ref,
+                                                     {error, timeout}}]),
+                    State2 = save_session(Ref, ChunkId, From, StorageUrls2,
+                                          Tref, State), 
+                    {noreply, State2};
                 not_found ->
                     {reply, {error, enoent}, State}
             end;
@@ -293,7 +295,8 @@ handle_call({ delete, ChunkId}, _From, State) ->
 handle_call( info, _From, State) ->
     S = ets:tab2list(storages),
     C = ets:tab2list(chunks),
-    io:format("Storages:~n~p~nChunks:~n~p~n", [S, C]),
+    io:format("Storages:~n~p~nChunks:~n~p~nSessions:~n~p~n",
+              [S, C, State#state.sessions]),
     {reply, ok, State};
 
 handle_call(_Request, _From, State) ->
@@ -310,6 +313,35 @@ handle_call(_Request, _From, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast({ read_callback, Ref, ok}, State) ->
+    {noreply, remove_session(Ref, State)};
+
+handle_cast({ read_callback, Ref, {error, _Err}}, State) ->
+    %% Select new storage
+    StorageUrls = get_storages(Ref, State),
+    Caller = get_caller(Ref, State),
+    case choose_storage(StorageUrls) of
+        #storage{url = Url, pid = Pid} ->
+            % Send a read cast to that storage and return
+            % (the storage will reply with data or error)
+            ChunkId = get_chunkid(Ref, State),
+            gen_server:cast(Pid, {read, ChunkId, Caller, Ref}),
+            StorageUrls2 = StorageUrls -- [Url],
+            % Add timeout callback if storage does not responds in time
+            {ok, Tref} =
+                timer:apply_after(?READ_TIMEOUT, gen_server, cast,
+                                  [?MODULE, {read_callback, Ref,
+                                             {error, timeout}}]),
+            State2 = update_session(Ref, StorageUrls2, Tref, State), 
+            {noreply, State2};
+        not_found ->
+            %% No storages has the chunk
+            gen_server:reply(Caller, {error, enoent}),
+            State1 = remove_session(Ref, State),
+            {noreply, State1}
+    end;
+
+
 handle_cast({ read_async, ChunkId, Fun}, State) ->
     %% Find Chunk information from ChunkId
     case ets:lookup(chunks, ChunkId) of
@@ -441,6 +473,56 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%==================================================================
 
+save_session(Ref, ChunkId, From, StorageUrls, Tref,
+             #state{sessions = Sessions} = State) ->
+    Session = #session{ref = Ref,
+                       chunk_id = ChunkId,
+                       caller_pid = From,
+                       remaining_storages = StorageUrls,
+                       timer_ref = Tref},
+    State#state{sessions = [Session | Sessions]}.
+
+update_session(Ref, StorageUrls, Tref, #state{sessions = Sessions0} = State) ->
+    case lists:keysearch(Ref, #session.ref, Sessions0) of
+        {value, #session{timer_ref = Tref0} = S} ->
+            timer:cancel(Tref0),
+            Sessions = lists:keyreplace(Ref, #session.ref, Sessions0,
+                                        S#session{remaining_storages = StorageUrls,
+                                                 timer_ref = Tref}),
+            State#state{sessions = Sessions};
+        false -> State
+    end.
+
+remove_session(Ref, #state{sessions = Sessions}=State) ->
+    case lists:keysearch(Ref, #session.ref, Sessions) of
+        {value, #session{timer_ref = Tref}} ->
+            timer:cancel(Tref),
+            Sessions2 = lists:keydelete(Ref, #session.ref, Sessions),
+            State#state{sessions = Sessions2};
+        false ->
+            State
+    end.
+
+get_chunkid(Ref, #state{sessions = Sessions}) ->
+    case lists:keysearch(Ref, #session.ref, Sessions) of
+        {value, #session{chunk_id = Cid}} -> Cid;
+        false -> []
+    end.
+ 
+get_caller(Ref, #state{sessions = Sessions}) ->
+    io:format("ref: ~p~ns: ~p~n", [Ref, Sessions]),
+    case lists:keysearch(Ref, #session.ref, Sessions) of
+        {value, #session{caller_pid = Pid}} -> Pid;
+        false -> no_caller
+    end.
+ 
+get_storages(Ref, #state{sessions = Sessions}) ->
+    case lists:keysearch(Ref, #session.ref, Sessions) of
+        {value, #session{remaining_storages = StoreageUrls}} -> StoreageUrls;
+        false -> []
+    end.
+
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Adds the Storage (URL) in the list of storages for each chunk in Chunklist
@@ -491,9 +573,6 @@ remove_storage_from_chunks([ChunkId | R], StorageUrl) ->
             ok
     end,
     remove_storage_from_chunks(R, StorageUrl).
-
-delete_unused_chunks() ->
-    ets:match_delete(chunks, #chunk{id='$1', ratio=0, storages=[], _='_'}).
 
 choose_storage([]) ->
     not_found;
