@@ -168,7 +168,6 @@ delete(ChunkId, StorageUrl) ->
 update_storage(Url, Pid, ChunkIds) ->
     gen_server:cast(?SERVER, {update_storage, Pid, Url, ChunkIds}).
 
-
 %%--------------------------------------------------------------------
 %% @doc
 %% Register ratio for a chunk in filesystem
@@ -236,7 +235,6 @@ handle_call({ read, ChunkId}, From, State) ->
             case choose_storage(StorageUrls) of
                 #storage{url = Url, pid = Pid}->
                     Ref = make_ref(),
-
                     TRef = read_with_timer(Pid, ChunkId, From, Ref),
 		    %% Update session with new timer and fewer urls
                     StorageUrls2 = StorageUrls -- [Url],
@@ -286,17 +284,19 @@ handle_call({ write_replicate, ChunkId, Data}, _From, State) ->
     case ets:lookup(chunks, ChunkId) of
         [#chunk{storages = StorageUrls, ratio = Ratio}] when
            length(StorageUrls) < Ratio ->
-            AllStorages = ets:tab2list(storages),
 
+            AllStorages = ets:tab2list(storages),
             case lists:filter(
                    fun(#storage{url=Url}) ->
                            not lists:member(Url, StorageUrls)
                    end, AllStorages) of
                 [] ->
-                    {reply, {error, not_needed}, State};
+		    %% Replication requested but not possible
+                    {reply, {error, not_enough_storages}, State};
                 Remaining ->
                     S = choose_write_storage(Remaining),
-                    io:format("Replicate ~p to ~p~n", [ChunkId, S#storage.url]),
+		    ?LOG(chunk_replication, 
+			   "Replicate ~p to ~p~n", [ChunkId, S#storage.url]),
                     Res = gen_server:call(S#storage.pid, {write, ChunkId, Data}),
                     ets:update_element(chunks, ChunkId,
                                        {#chunk.storages, StorageUrls ++ [S#storage.url]}),
@@ -310,7 +310,7 @@ handle_call({ write_replicate, ChunkId, Data}, _From, State) ->
 
 handle_call({ delete, ChunkId}, _From, State) ->
     Res = case ets:lookup(chunks, ChunkId) of
-	      [#chunk{ref_cnt=RefCnt}] when RefCnt <= 0 ->
+	      [#chunk{ref_cnt=RefCnt}] when RefCnt =< 0 ->
 		  %% Refcount 0 no user of file
 		  {error, not_found};
 	      [#chunk{ref_cnt=RefCnt}] ->
