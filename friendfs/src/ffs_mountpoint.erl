@@ -58,7 +58,7 @@
 
 -record(state,{ filesystem, default_uid, default_gid }).
 
--define(DBG(Str), io:format("Ctx = ~p\n"++Str++"\n",[Ctx])).
+-define(DBG2(Str), ?DBG("Ctx = ~p~n~p~n", [Str, Ctx])).
 
 %%%===================================================================
 %%% API
@@ -104,7 +104,7 @@ access(Ctx, InodeI, Mask, Cont, State) ->
     async(fun()-> access_async(Ctx,InodeI,Mask,State) end,Cont,State).
 
 access_async(Ctx,InodeI,Mask,State) ->
-    ?DBG("access called"),
+    ?DBG2("access called"),
     case ffs_filesystem:lookup(State#state.filesystem,InodeI) of
 	enoent ->
 	    #fuse_reply_err{err=enoent};
@@ -170,7 +170,7 @@ create(Ctx,ParentI,BinName,Mode,Fi,Cont,State) ->
 
 create_async(#fuse_ctx{ uid = Uid, gid = Gid} = Ctx, ParentI, 
              BinName, Mode, Fi, State) -> 
-    ?DBG("create called"),
+    ?DBG2("create called"),
     NewInode = ffs_filesystem:create(
 		 State#state.filesystem,ParentI,binary_to_list(BinName),
 		 Uid,Gid,to_ffs_mode(Mode)),
@@ -195,7 +195,7 @@ flush(Ctx, InodeI, Fi, Cont, State) ->
     async(fun()-> flush_async(Ctx,InodeI,Fi,State) end,Cont,State).
 
 flush_async(Ctx, InodeI, _Fi, State) -> 
-    ?DBG("flush called"),
+    ?DBG2("flush called"),
     ffs_filesystem:flush(State#state.filesystem,InodeI),
     #fuse_reply_err{err = ok}.
 
@@ -210,7 +210,7 @@ forget(Ctx, InodeI, Nlookup, Cont, State) ->
 	async(fun()-> forget_async(Ctx,InodeI,Nlookup,State) end, Cont, State).
 
 forget_async(Ctx, _Inode, _Nlookup, _State) -> 
-  ?DBG("forget called"),
+  ?DBG2("forget called"),
   #fuse_reply_none{}.
 
 %% @spec fsync(Ctx::#fuseCtx{}, Inode::integer (), IsDataSync::bool (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { fsync_async_reply (), NewState } | { noreply, NewState } 
@@ -226,7 +226,7 @@ fsync(Ctx, Inode, IsDataSync, Fi, Cont, State) ->
     async(fun() -> fsync_async(Ctx,Inode,IsDataSync,Fi,State) end,Cont,State).
 
 fsync_async(Ctx, _Inode, _IsDataSync, _Fi, _State) -> 
-    ?DBG("fsync called"),
+    ?DBG2("fsync called"),
     erlang:throw (not_implemented).
 
 %% @spec fsyncdir(Ctx::#fuseCtx{}, Inode::integer (), IsDataSync::bool (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { fsyncdir_async_reply (), NewState } | { noreply, NewState } 
@@ -242,7 +242,7 @@ fsyncdir(Ctx, Inode, IsDataSync, Fi, Cont, State) ->
     async(fun() -> fsyncdir_async(Ctx,Inode,IsDataSync,Fi,State) end,Cont,State).
 
 fsyncdir_async(Ctx, _Inode, _IsDataSync, _Fi, _State) -> 
-    ?DBG("fsyncdir called"),
+    ?DBG2("fsyncdir called"),
     erlang:throw (not_implemented).
 
 %% @spec getattr(Ctx::#fuseCtx{}, Inode::integer (), Cont::continuation (), State) -> { getattr_async_reply (), NewState } | { noreply, NewState } 
@@ -256,7 +256,7 @@ getattr(Ctx, InodeI, Cont, State) ->
     async(fun() -> getattr_async(Ctx,InodeI,State) end,Cont,State).
 
 getattr_async(Ctx, InodeI, State) -> 
-    ?DBG("getattr called"),
+    ?DBG2("getattr called"),
     case ffs_filesystem:lookup(State#state.filesystem,InodeI) of
 	enoent ->
 	    #fuse_reply_err{ err = enoent};
@@ -277,7 +277,7 @@ getlk(Ctx, Inode, Fi, Lock, Cont, State) ->
 
 
 getlk_async(Ctx, _Inode, _Fi, _Lock, _State) -> 
-    ?DBG("getlk called"),
+    ?DBG2("getlk called"),
     erlang:throw (not_implemented).
 
 %% @spec getxattr(Ctx::#fuseCtx{}, Inode::integer (), Name::binary (), Size::integer (), Cont::continuation (), State) -> { getxattr_async_reply (), NewState } | { noreply, NewState } 
@@ -299,7 +299,7 @@ getxattr(Ctx, Inode, Name, Size, Cont, State) ->
 	  end, Cont, State).
 
 getxattr_async(Ctx, _Inode, _Name, _Size, _State) ->
-    ?DBG("getxattr called"),
+    ?DBG2("getxattr called"),
     #fuse_reply_xattr{ count = 0 }.
 
 %% @spec link(Ctx::#fuseCtx{}, Ino::integer (), NewParent::integer (), NewName::binary (), Cont::continuation (), State) -> { link_async_reply (), NewState } | { noreply, NewState }
@@ -316,7 +316,7 @@ link(Ctx, Ino, NewParent, NewName, Cont, State) ->
 
 
 link_async(Ctx, _Ino, _NewParent, _NewName, _State) -> 
-    ?DBG("link called"),
+    ?DBG2("link called"),
     erlang:throw (not_implemented).
 
 %% @spec listxattr(Ctx::#fuseCtx{}, Ino::integer (), Size::integer (), Cont::continuation (), State) -> { listxattr_async_reply (), NewState } | { noreply, NewState }
@@ -337,7 +337,7 @@ listxattr(Ctx, Ino, Size, Cont, State) ->
     async(fun() -> listxattr_async(Ctx, Ino, Size,State) end, Cont, State).
 
 listxattr_async(Ctx, _Ino, _Size, _State) -> 
-    ?DBG("listxattr called"),
+    ?DBG2("listxattr called"),
     #fuse_reply_xattr{ count = 0 }.
 
 %% @spec lookup(Ctx::#fuseCtx{}, ParentInode::integer (), Name::binary (), Cont::continuation (), State) -> { lookup_async_reply (), NewState } | { noreply, NewState }
@@ -355,7 +355,7 @@ lookup(Ctx, ParentInodeI, BinName, Cont, State) ->
 	  end, Cont, State).
 
 lookup_async(Ctx, ParentInodeI, BinName, State) ->
-    ?DBG("lookup called"),
+    ?DBG2("lookup called"),
     Name = erlang:binary_to_list (BinName),
     case ffs_filesystem:find(State#state.filesystem,ParentInodeI,Name) of
 	enoent ->
@@ -380,7 +380,7 @@ mkdir(Ctx, ParentInodeI, Name, Mode, Cont, State) ->
 	  end, Cont, State).
 
 mkdir_async(Ctx, ParentInodeI, Name, Mode, State) ->
-    ?DBG("mkdir called"),
+    ?DBG2("mkdir called"),
     
     Inode = ffs_filesystem:make_dir(State#state.filesystem,
 				    ParentInodeI,
@@ -405,7 +405,7 @@ mknod(Ctx, ParentInode, Name, Mode, Dev, Cont, State) ->
 	  end, Cont, State).
 
 mknod_async(Ctx, _ParentInode, _Name, _Mode, _Dev, _State) -> 
-    ?DBG("mknod called"),
+    ?DBG2("mknod called"),
     erlang:throw (not_implemented).
 
 %% @spec open(Ctx::#fuseCtx{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { open_async_reply (), NewState } | { noreply, NewState }
@@ -418,7 +418,7 @@ open(Ctx, _Inode, Fi, Cont, State) ->
     async(fun() -> open_async(Ctx, _Inode, Fi,State) end, Cont, State).
 
 open_async(Ctx, _Inode, _Fi, _State) ->
-    ?DBG("open called"),
+    ?DBG2("open called"),
     #fuse_reply_open{ fuse_file_info = #fuse_file_info{flags = 66,
 						       writepage = false,
 						       direct_io = false,
@@ -437,7 +437,7 @@ opendir(Ctx, Inode, Fi, Cont, State) ->
     async(fun() -> opendir_async(Ctx, Inode, Fi,State) end, Cont, State).
 
 opendir_async(Ctx, _Inode, Fi, _State) ->
-    ?DBG("opendir called"),
+    ?DBG2("opendir called"),
     #fuse_reply_open{ fuse_file_info = Fi}.
 
 %% @spec read(Ctx::#fuseCtx{}, Inode::integer (), Size::integer (), Offset::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { read_async_reply (), NewState } | { noreply, NewState }
@@ -453,7 +453,7 @@ read(Ctx, InodeI, Size, Offset, Fi, Cont, State) ->
 	  end, Cont, State).
 
 read_async(Ctx, InodeI, Size, Offset, _Fi, State) ->
-    ?DBG("read called"),
+    ?DBG2("read called"),
     {ok,Data} = ffs_filesystem:read(State#state.filesystem,
 				    InodeI, Size, Offset),
     #fuse_reply_buf{ buf = Data,
@@ -478,7 +478,7 @@ readdir(Ctx, InodeI, Size, Offset, Fi, Cont, State) ->
 	  end, Cont, State).
 
 readdir_async(Ctx, InodeI, _Size, Offset, _Fi, State) ->
-    ?DBG("readdir called"),
+    ?DBG2("readdir called"),
     FfsList = ffs_filesystem:list(State#state.filesystem,InodeI),
     {List,_} = lists:mapfoldl(
 		 fun({Name,Inode},Offset) -> 
@@ -501,7 +501,7 @@ readlink(Ctx, Inode, Cont, State) ->
     async(fun() -> readlink_async(Ctx, Inode, State) end, Cont, State).
 
 readlink_async(Ctx, _Inode, _State) -> 
-    ?DBG("readlink called"),
+    ?DBG2("readlink called"),
     erlang:throw (not_implemented).
 
 %% @spec release(Ctx::#fuseCtx{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { release_async_reply (), NewState } | { noreply, NewState } 
@@ -522,7 +522,7 @@ release(Ctx, Inode, Fi, Cont, State) ->
     async(fun() -> release_async(Ctx, Inode, Fi, State) end, Cont, State).
 
 release_async(Ctx, _Inode, _Fi, _State) -> 
-    ?DBG("release called"),
+    ?DBG2("release called"),
     #fuse_reply_err{err = ok}.
 
 %% @spec releasedir(Ctx::#fuseCtx{}, Inode::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { releasedir_async_reply (), NewState } | { noreply, NewState } 
@@ -542,7 +542,7 @@ releasedir(Ctx, Inode, Fi, Cont, State) ->
     async(fun() -> releasedir_async(Ctx, Inode, Fi, State) end, Cont, State).
 
 releasedir_async(Ctx, _Inode, _Fi, _State) -> 
-    ?DBG("releasedir called"),
+    ?DBG2("releasedir called"),
     #fuse_reply_err{err = ok}.
 
 %% @spec removexattr(Ctx::#fuseCtx{}, Inode::integer (), Name::binary (), Cont::continuation (), State) -> { removexattr_async_reply (), NewState } | { noreply, NewState }
@@ -557,7 +557,7 @@ removexattr(Ctx, Inode, Name, Cont, State) ->
     async(fun() -> removexattr_async(Ctx, Inode, Name, State) end, Cont, State).
 
 removexattr_async(Ctx, _Inode, _Name, _State) -> 
-    ?DBG("removexattr called"),
+    ?DBG2("removexattr called"),
     erlang:throw (not_implemented).
 
 %% @spec rename(Ctx::#fuseCtx{}, Parent::integer (), Name::binary (), NewParent::integer (), NewName::binary (), Cont::continuation (), State) -> { rename_async_reply (), NewState } | { noreply, NewState }
@@ -573,7 +573,7 @@ rename(Ctx, Parent, Name, NewParent, NewName, Cont, State) ->
 	  end, Cont, State).
 
 rename_async(Ctx, _Parent, _Name, _NewParent, _NewName, _State) ->
-    ?DBG("rename called"),
+    ?DBG2("rename called"),
     #fuse_reply_err{err = ok}.
 
 %% @spec rmdir(Ctx::#fuseCtx{}, Inode::integer (), Name::binary (), Cont::continuation (), State) -> { rmdir_async_reply (), NewState } | { noreply, NewState }
@@ -587,7 +587,7 @@ rmdir(Ctx, Inode, Name, Cont, State) ->
     async(fun() -> rmdir_async(Ctx, Inode, Name, State) end, Cont, State).
 
 rmdir_async(Ctx, _Inode, _Name, _State) -> 
-    ?DBG("rmdir called"),
+    ?DBG2("rmdir called"),
     erlang:throw (not_implemented).
 
 %% @spec setattr(Ctx::#fuseCtx{}, Inode::integer (), Attr::#stat{}, ToSet::integer (), Fi::maybe_fuse_file_info (), Cont::continuation (), State) -> { setattr_async_reply (), NewState } | { noreply, NewState }
@@ -607,7 +607,7 @@ setattr(Ctx, InodeI, Attr, ToSet, Fi, Cont, State) ->
 	  end, Cont, State).
 
 setattr_async(Ctx, InodeI, _Attr, _ToSet, _Fi, State) -> 
-  ?DBG("setattr called"),
+  ?DBG2("setattr called"),
     lists:foreach(fun %%(?FUSE_SET_ATTR_MTIME) when ?FUSE_SET_ATTR_MTIME bor ToSet =/= 0 ->
 		  %%	ffs_filesystem:modify(State#state.filesystem,InodeI,unix_to_now(Attr#stat.st_mtime));
 		  %%(?FUSE_SET_ATTR_ATIME) when ?FUSE_SET_ATTR_ATIME bor ToSet =/= 0 ->
@@ -638,7 +638,7 @@ setlk(Ctx, Inode, Fi, Lock, Sleep, Cont, State) ->
 	  end, Cont, State).
 
 setlk_async(Ctx, _Inode, _Fi, _Lock, _Sleep, _State) -> 
-    ?DBG("setlk called"),
+    ?DBG2("setlk called"),
     erlang:throw (not_implemented).
 
 %% @spec setxattr(Ctx::#fuseCtx{}, Inode::integer (), Name::binary (), Value::binary (), Flags::xattr_flags (), Cont::continuation (), State) -> { setxattr_async_reply (), NewState } | { noreply, NewState }
@@ -658,7 +658,7 @@ setxattr(Ctx, Inode, Name, Value, Flags, Cont, State) ->
 	  end, Cont, State).
 
 setxattr_async(Ctx, _Inode, _Name, _Value, _Flags, _State) -> 
-    ?DBG("setxattr called"),
+    ?DBG2("setxattr called"),
     #fuse_reply_err{err = ok}.
 
 %% @spec statfs(Ctx::#fuseCtx{}, Inode::integer (), Cont::continuation (), State) -> { statfs_async_reply (), NewState } | { noreply, NewState }
@@ -672,7 +672,7 @@ statfs(Ctx, Inode, Cont, State) ->
     async(fun() -> statfs_async(Ctx, Inode, State) end, Cont, State).
 
 statfs_async(Ctx, _Inode, #state{ filesystem = FS}) ->
-    ?DBG("statfs called"),
+    ?DBG2("statfs called"),
     
     Config = ffs_filesystem:get_config(FS),
     Stats  = ffs_filesystem:get_stats(FS),
@@ -715,7 +715,7 @@ symlink(Ctx, Link, Inode, Name, Cont, State) ->
 	  end, Cont, State).
 
 symlink_async(Ctx, _Link, _Inode, _Name, _State) -> 
-    ?DBG("symlink called"),
+    ?DBG2("symlink called"),
     erlang:throw (not_implemented).
 
 %% @spec write(Ctx::#fuseCtx{}, Inode::integer (), Data::binary (), Offset::integer (), Fi::#fuse_file_info{}, Cont::continuation (), State) -> { write_async_reply (), NewState } | { noreply, NewState }
@@ -731,7 +731,7 @@ write(Ctx, InodeI, Data, Offset, Fi, Cont, State) ->
 	  end, Cont, State).
 
 write_async(Ctx, InodeI, Data, Offset, _Fi, State) -> 
-    ?DBG("write called"),	
+    ?DBG2("write called"),	
   ffs_filesystem:write(State#state.filesystem,InodeI,Data,Offset),
   #fuse_reply_write{ count = size(Data) }.
 
@@ -746,7 +746,7 @@ unlink(Ctx, ParentI, Name, Cont, State) ->
     async(fun() -> unlink_async(Ctx, ParentI, Name, State) end, Cont, State).
 
 unlink_async(Ctx, ParentI, Name, State) ->
-    ?DBG("unlink called"),
+    ?DBG2("unlink called"),
     ffs_filesystem:delete(State#state.filesystem,ParentI,binary_to_list(Name)),
     #fuse_reply_err{err = ok}.
 
