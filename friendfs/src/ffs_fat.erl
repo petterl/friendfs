@@ -508,10 +508,8 @@ write_cache(Tid,InodeI,Cache) ->
 %%--------------------------------------------------------------------
 flush_cache(Tid,INodeI,Chunk) ->
     INode = lookup(Tid,INodeI),
-    ets:insert(Tid#ffs_tid.inode,INode#ffs_inode{ 
-				   size = 1,
-				   chunks = Chunk,
-				   write_cache = undefined }).
+    ets:insert(Tid#ffs_tid.inode,INode#ffs_inode{
+				   chunks = Chunk }).
 
 
 %%--------------------------------------------------------------------

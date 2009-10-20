@@ -58,7 +58,7 @@ read(FsName, InodeI, Size, Offset) ->
     Tid = ffs_config:read({fs_tid, FsName}),
     {NewOffset,Chunks} = ffs_fat:read(Tid,InodeI,Size,Offset),
     case read_chunks(Chunks) of
-	{ok,<<_Head:NewOffset/binary,Data:Size/binary,_Rest/binary>>} ->
+	<<_Head:NewOffset/binary,Data:Size/binary,_Rest/binary>> ->
 	    {ok,Data};
 	{error,Reason} ->
 	    {error,Reason}
@@ -79,22 +79,30 @@ write(FsName, InodeI, Data, Offset) ->
 	[] ->
 	    ok;
 	Chunks when is_list(Chunks) ->
-	    update_chunks(Chunks, Tid, Config)
+	    update_chunks(Chunks, InodeI, Tid, Config)
     end.
 
-update_chunks([{append_chunk, ChunkData} | R], Tid, Config) ->
+update_chunks([{append_chunk, ChunkData} | R], InodeI, Tid, Config) ->
 	ChunkId = ffs_lib:get_chunkid(ChunkData),
+	ChunkPos = length((ffs_fat:lookup(Tid,InodeI))#ffs_inode.chunks),
+	update_inode(Tid,InodeI,ChunkPos,ChunkId,size(ChunkData)),
     store_chunk(ChunkId,ChunkData,Config),
-    update_chunks(R, Tid, Config);
+    update_chunks(R, InodeI, Tid, Config);
 update_chunks([{update_chunk, #ffs_chunk{ chunkid = OldChunkId,
- 										  id = Id }, ChunkData} | R], 
-		Tid, Config) ->
+ 										  id = ChunkPos }, ChunkData} | R], 
+		InodeI, Tid, Config) ->
 	NewChunkId = ffs_lib:get_chunkid(ChunkData),
+	update_inode(Tid,InodeI,ChunkPos,NewChunkId,size(ChunkData)),
 	store_chunk(NewChunkId,ChunkData,Config),
     delete_chunk(OldChunkId, Config),
-    update_chunks(R, Tid, Config);
-update_chunks([],_Tid, _Config) ->
+    update_chunks(R, InodeI, Tid, Config);
+update_chunks([],_InodeI, _Tid, _Config) ->
     ok.
+
+update_inode(Tid,InodeI,ChunkPos,ChunkId,Size) ->
+	OldChunks = (ffs_fat:lookup(Tid,InodeI))#ffs_inode.chunks,
+	NewChunk = #ffs_chunk{ id = ChunkPos, size = Size, chunkid = ChunkId},
+	ffs_fat:flush_cache(Tid,InodeI,lists:keystore(ChunkPos,#ffs_chunk.id,OldChunks,NewChunk)).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -135,8 +143,8 @@ write_cache(<<Head/binary>>,<<Rest/binary>>,_Offset,<<Data/binary>>,
 			end,
 			
 	CachedChunkId = if 
-						Chunks == [] -> -1; 
-						true -> (hd(Chunks))#ffs_chunk.id
+						Chunks == [] -> undefined; 
+						true -> hd(Chunks)
 					end,
 			
 	{{CachedChunkId,<<Head/binary,Data/binary,RestData/binary>>},
@@ -173,7 +181,7 @@ safe_tl([]) ->
 safe_tl([_|T]) ->
 	T.
 	
-get_chunkdata({Id,Data},[#ffs_chunk{ id = Id }|_T]) ->
+get_chunkdata({#ffs_chunk{ id = Id },Data},[#ffs_chunk{ id = Id }|_T]) ->
 	{ok,Data};
 get_chunkdata({_Id,Data},[]) ->
 	{ok,Data};
@@ -193,11 +201,11 @@ get_chunkdata(_,_) ->
 flush(FsName, InodeI ) ->
     Tid = ffs_config:read({fs_tid, FsName}),
     Config = ffs_config:read({fs_config, FsName}),
-    case flush_cache( Tid, InodeI) of
+    case flush_cache( Tid, InodeI ) of
 	[] ->
 	    ok;
 	Chunks ->
-	    update_chunks(Chunks, Tid, Config)
+	    update_chunks(Chunks, InodeI, Tid, Config)
     end.
 
 %%--------------------------------------------------------------------
@@ -211,15 +219,14 @@ flush(FsName, InodeI ) ->
 %% @end
 %%--------------------------------------------------------------------
 flush_cache(Tid,InodeI) when is_integer(InodeI) ->
+	ffs_fat:flush_cache(Tid,InodeI,undefined),
     flush_cache(Tid,ffs_fat:lookup(Tid,InodeI));
 flush_cache(_Tid,#ffs_inode{ write_cache = undefined }) ->
-    empty;
-flush_cache(Tid,#ffs_inode{ inode = INodeI, write_cache = Data } = Inode) ->
-    {M,F} = ffs_lib:get_value(chunkid_mfa,Tid#ffs_tid.config),
-    ChunkId = M:F(Data),
-    {add_chunk,ChunkId,Data};
-flush_cache(_Tid,Else) ->
-    Else.
+    [];
+flush_cache(Tid,#ffs_inode{ write_cache = {undefined,Data} } = Inode) ->
+    [{append_chunk,Data}];
+flush_cache(Tid,#ffs_inode{ write_cache = {Chunk,Data} } = Inode) ->
+    [{update_chunk,Chunk,Data}].
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -364,7 +371,7 @@ init(Name) ->
 
 store_chunk(ChunkId,Data,_Config) ->
     io:format("Storing ~p\n",[ChunkId]),
-    %ffs_chunk_server:write(ChunkId,Data),
+    ffs_chunk_server:write(ChunkId,Data),
     ok.
 
 delete_chunk(ChunkId,_Config) ->
