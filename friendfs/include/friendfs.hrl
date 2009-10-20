@@ -43,6 +43,7 @@
 
 -record(ffs_chunk,{
 	  id,       %% The place and id of this chunk within a inode
+	  size,     %% The size of this chunk
 	  chunkid   %% The chunkid of this chunk used by the ffs_chunk_server
 	 }).
 

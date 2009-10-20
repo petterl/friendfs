@@ -10,8 +10,7 @@
 
 %% API
 -export([init/1,
-	 init/2,
-	 init/5,
+	 init/4,
 	 init_counters/0,
 	 make_dir/6,
 	 create/8,
@@ -74,17 +73,16 @@
 %% @end
 %%--------------------------------------------------------------------
 init(Name) ->
-    init(Name,2 bsl 20).
-init(Name,ChunkSize) ->
-    init(Name,ChunkSize,-1,-1,?U bor ?G_X bor ?G_R bor ?O_X bor ?O_R).
-init(Name,ChunkSize,Uid,Gid,Mode) ->
+    init(Name,-1,-1,?U bor ?G_X bor ?G_R bor ?O_X bor ?O_R).
+init(Name,Uid,Gid,Mode) ->
     ets:insert(?COUNTER_TABLE,{Name,0}),
+	AName = list_to_atom(Name),
     Tid = #ffs_tid{ 
       name = Name,
-      inode = ets:new(Name,[{keypos,#ffs_inode.inode},public,set]),
-      link = ets:new(Name,[{keypos,#ffs_link.from},public,bag]),
-      xattr = ets:new(Name,[{keypos,#ffs_xattr.inode},public,set]),
-      config = [{chunk_size,ChunkSize},{chunkid_mfa,{ffs_lib,get_chunkid}}]},
+      inode = ets:new(AName,[{keypos,#ffs_inode.inode},public,set]),
+      link = ets:new(AName,[{keypos,#ffs_link.from},public,bag]),
+      xattr = ets:new(AName,[{keypos,#ffs_xattr.inode},public,set]),
+      config = [{chunkid_mfa,{ffs_lib,get_chunkid}}]},
     create(Tid,1,"..",Uid,Gid,?D bor Mode,0,0),
     Tid.
 
@@ -528,23 +526,27 @@ flush_cache(Tid,INodeI,Chunk) ->
 %%      ChunkIds = [{chunk,ChunkId}] | []
 %% @end
 %%--------------------------------------------------------------------
-read(Tid,InodeI,Size,Offset) ->
-    ChunkSize = ffs_lib:get_value(chunk_size,Tid#ffs_tid.config),
-    StartChunk = Offset div ChunkSize,
-    EndChunk = (Size+(Offset rem ChunkSize)-1) div ChunkSize,
+read(Tid,InodeI,Length,Offset) ->
     Inode = lookup(Tid,InodeI),
-    {Offset rem ChunkSize,
-     read_chunks(0,StartChunk,EndChunk,Inode#ffs_inode.chunks)}.
+	read_chunks(Inode#ffs_inode.chunks,0,Offset,Length).
+
+%% Wonder if I should have a basecase here? It would happen if the 
+%% offset it outside the size of the file which is very strange. 
+read_chunks([#ffs_chunk{ size = Size } = Chunk|T], CurrSize, Offset, Length) 
+		when (Size + CurrSize) > Offset ->
+	{Offset-CurrSize, read_data(T,Size - (Offset-CurrSize),[Chunk],Length)};
+read_chunks([#ffs_chunk{ size = Size } = Chunk|T], CurrSize, Offset, Length) ->
+	read_chunks(T, CurrSize+Size, Offset, Length).
 
 
-read_chunks(Current,Current,Current,[H|_T]) ->
-    [H];
-read_chunks(Current,Current,EndChunk,[H|T]) ->
-    [H|read_chunks(Current+1,Current+1,EndChunk,T)];
-read_chunks(Current,StartChunk,EndChunk,[_H|T]) ->
-    read_chunks(Current+1,StartChunk,EndChunk,T);
-read_chunks(_Current,_StartChunk,_EndChunk,[]) ->
-    [].
+read_data(_, CurrLength, Acc, Length) when CurrLength >= Length ->
+	lists:reverse(Acc);
+read_data([#ffs_chunk{ size = Size } = Chunk|T], CurrLength, Acc, Length) 
+		when (CurrLength + Size) >= Length ->
+	lists:reverse([Chunk|Acc]);
+read_data([#ffs_chunk{ size = Size } = Chunk|T], CurrLength, Acc, Length) ->
+	read_data(T,CurrLength + Size,[Chunk|Acc],Length).
+
 
 %%====================================================================
 %% Internal functions
