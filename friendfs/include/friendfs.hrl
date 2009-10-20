@@ -81,9 +81,10 @@
 -define(FREE_INODES,free_inodes).
 
 -record(chunk, {
-          id,           % Chunk ID
-          ratio,        % Maximum Requested chunk ratio by fileservers
-          storages = [] % List of storage URLs where chunk is stored
+          id,            % Chunk ID
+          ratio,         % Maximum Requested chunk ratio by fileservers
+          storages = [], % List of storage URLs where chunk is stored
+	  ref_cnt = 0    % Number of references registered to this chunk
         }).
 
 
