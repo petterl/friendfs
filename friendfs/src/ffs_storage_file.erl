@@ -80,16 +80,6 @@ handle_call(list, _From, State) ->
     Res = file:list_dir(State#state.path),
     {reply, Res, State, ?REFRESH_INTERVAL};
 
-handle_call({write, Cid, Data}, _From, State0) ->
-    {Result, State} =
-        case file:write_file(join(State0#state.path, Cid),Data) of
-            ok ->
-                {ok, State0#state{chunks = State0#state.chunks ++ [Cid]}};
-            {error, _} = Err ->
-                {Err, State0}
-        end,
-    {reply, Result, State, ?REFRESH_INTERVAL};
-
 handle_call(refresh, _From, State) ->
     {ok, Files} = file:list_dir(State#state.path),
     ffs_chunk_server:update_storage(State#state.url, self(), Files, all),
@@ -122,23 +112,32 @@ handle_cast({delete, Cid}, State0) ->
 
 handle_cast({read, Path, From, Ref}, State) ->
     % Read data from file
-    Res = file:read_file(join(State#state.path, Path)),
-    % Tell chunkserver that we got the data
-    gen_server:cast(ffs_chunk_server, {read_callback, Ref, ok}),
-    % Send it to requesting process
-    gen_server:reply(From, Res),
+    case file:read_file(join(State#state.path, Path)) of
+	{ok, Data} ->
+	    %% Tell chunkserver that we got the data
+	    gen_server:cast(ffs_chunk_server, {read_callback, Ref, ok}),
+	    %% Send it to requesting process
+	    gen_server:reply(From, {ok, Data});
+	{error, _} = Err ->
+	    %% Tell chunkserver that we got error
+	    gen_server:cast(ffs_chunk_server, {read_callback, Ref, Err})
+    end,
     {noreply, State, ?REFRESH_INTERVAL};
 
-handle_cast({read_async, Path, Fun, ErrorFun}, State) ->
-    % Read data from file
-    case file:read_file(join(State#state.path, Path)) of
-	{ok, _} = Res ->
+handle_cast({write, Cid, Data, From, Ref}, State) ->
+    case file:write_file(join(State#state.path, Cid), Data) of
+	ok ->
+	    State1 = State#state{chunks = State#state.chunks ++ [Cid]},
+	    %% Tell chunkserver that we stored the data
+	    gen_server:cast(ffs_chunk_server, {write_callback, Ref, ok}),
 	    %% Send it to requesting process
-	    Fun(Res);
-	Error -> 
-	    ErrorFun(Error)
+	    gen_server:reply(From, ok);
+	{error, _} = Err ->
+	    State1 = State,
+	    %% Tell chunkserver that we stored the data
+	    gen_server:cast(ffs_chunk_server, {write_callback, Ref, Err})
     end,
-    {noreply, State, ?REFRESH_INTERVAL}.
+    {noreply, State1, ?REFRESH_INTERVAL}.
 
 %%--------------------------------------------------------------------
 %% @private
