@@ -134,11 +134,10 @@ write_replicate(ChunkId, Data) ->
 %% @doc
 %% Delete a chunk from all storages
 %%
-%% It actuallt sets the ratio for the chunk to 0 and letting the
-%% replicator delete the chunks when possible
+%% It actuallt decrements the ref count on the chunk. If ref count is 0 it will be %% deleted by the chunk replicator when possible.
 %%
 %% @spec
-%%   delete(chunk_id()) -> ok | {error, Reason}
+%%   delete(chunk_id()) -> ok | {error, not_found}
 %% @end
 %%--------------------------------------------------------------------
 delete(ChunkId) ->
@@ -149,7 +148,7 @@ delete(ChunkId) ->
 %% Delete a chunk from a specific storage
 %%
 %% Called by the replicator to delete from specific storages.
-%% Will always return ok, even if nothins was deleted.
+%% Will always return ok, even if nothing was deleted.
 %%
 %% @spec
 %%   delete(chunk_id(), storage_url()) -> ok
@@ -310,14 +309,19 @@ handle_call({ write_replicate, ChunkId, Data}, _From, State) ->
     end;
 
 handle_call({ delete, ChunkId}, _From, State) ->
-    Res =
-        case ets:update_element(chunks, ChunkId, {#chunk.ratio, 0}) of
-            true ->
-                ffs_chunk_replicator:refresh(),
-                ok;
-            false ->
-                {error, not_found}
-        end,
+    Res = case ets:lookup(chunks, ChunkId) of
+	      [#chunk{ref_cnt=RefCnt}] when RefCnt <= 0 ->
+		  %% Refcount 0 no user of file
+		  {error, not_found};
+	      [#chunk{ref_cnt=RefCnt}] ->
+		  ets:update_element(chunks, ChunkId, 
+				     {#chunk.ref_cnt, RefCnt-1}),
+		  ffs_chunk_replicator:refresh(),
+		  ok;
+	      [] ->
+		  %% Chunk not found, no user of file.
+		  {error, not_found}
+	  end,
     {reply, Res, State};
 
 handle_call({ register_chunk, ChunkId, Ratio, _FsName}, _From, State) ->
@@ -427,7 +431,7 @@ handle_cast({ delete, ChunkId, StorageUrl}, State) ->
                                        {#chunk.storages,
                                         StorageUrls -- [S#storage.url]});
                 [] ->
-                    % Error: Storage missing, ignore
+		    %% Error: Storage missing, ignore
                     ok
             end;
         [] ->

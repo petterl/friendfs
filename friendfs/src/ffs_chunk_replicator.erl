@@ -150,7 +150,7 @@ handle_cast(_Msg, State) ->
     {noreply, State, ?INTERVAL}.
 
 create_delete_actions() ->
-    Match = ets:match(chunks, #chunk{id='$1', storages='$2', ratio=0, _='_'}),
+    Match = ets:match(chunks, #chunk{id='$1', storages='$2', ref_cnt=0, _='_'}),
     create_delete_action_tuples(Match).
 create_delete_action_tuples([]) ->
     [];
