@@ -75,21 +75,26 @@ read(FsName, InodeI, Size, Offset) ->
 write(FsName, InodeI, Data, Offset) ->
     Tid = ffs_config:read({fs_tid, FsName}),
     Config = ffs_config:read({fs_config, FsName}),
-    case write_cache(Tid, InodeI, Data, Offset) of
+    case write_cache(Tid, InodeI, Data, Offset, Config) of
 	[] ->
 	    ok;
-	Chunks ->
-	    update_chunks(Chunks, Config)
+	Chunks when is_list(Chunks) ->
+	    update_chunks(Chunks, Tid, Config)
     end.
 
-update_chunks([{add_chunk, ChunkId, ChunkData} | R], Config) ->
+update_chunks([{append_chunk, ChunkData} | R], Tid, Config) ->
+	ChunkId = ffs_lib:get_chunkid(ChunkData),
     store_chunk(ChunkId,ChunkData,Config),
-    update_chunks(R, Config);
-update_chunks([{delete_chunk, ChunkId} | R], Config) ->
-    delete_chunk(ChunkId, Config),
-    update_chunks(R, Config);
-update_chunks([],_Config) ->
-    [].
+    update_chunks(R, Tid, Config);
+update_chunks([{update_chunk, #ffs_chunk{ chunkid = OldChunkId,
+ 										  id = Id }, ChunkData} | R], 
+		Tid, Config) ->
+	NewChunkId = ffs_lib:get_chunkid(ChunkData),
+	store_chunk(NewChunkId,ChunkData,Config),
+    delete_chunk(OldChunkId, Config),
+    update_chunks(R, Tid, Config);
+update_chunks([],_Tid, _Config) ->
+    ok.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -105,34 +110,77 @@ update_chunks([],_Config) ->
 %%      Data = binary()
 %% @end
 %%--------------------------------------------------------------------
-write_cache(Tid,InodeI,AppendData,Offset) ->
-    write_cache(Tid,InodeI,AppendData,Offset,[]).
-write_cache(Tid,InodeI,AppendData,Offset,Acc) ->
-    ChunkSize = ffs_lib:get_value(chunk_size,Tid#ffs_tid.config),
-    Inode = ffs_fat:lookup(Tid,InodeI),
-    NewData = case Inode of
-		  #ffs_inode{ write_cache = undefined } 
-		    when (Offset rem ChunkSize) == 0 ->
-		      AppendData;
-		  #ffs_inode{ write_cache = OldData } 
-		    when size(OldData) == (Offset rem ChunkSize) ->
-		      <<OldData/binary,AppendData/binary>>
-			  end,
-    io:format("Size of data is ~p\n",[size(NewData)]),
-    NewInode = Inode#ffs_inode{ size = size(AppendData) + Inode#ffs_inode.size },
-    if 
-	size(NewData) > ChunkSize ->
-	    <<FirstChunk:ChunkSize/binary,Rest/binary>> = NewData,
-	    Chunk = flush_cache(Tid,NewInode#ffs_inode{ write_cache = FirstChunk }),
-	    write_cache(Tid,InodeI,Rest,Offset+ChunkSize,[Chunk|Acc]);
-	size(NewData) == ChunkSize ->
-	    Chunk = flush_cache(Tid,NewInode#ffs_inode{ write_cache = NewData }),
-	    [Chunk|Acc];
-	true ->
-	    ffs_fat:write_cache( Tid, InodeI, NewData),
-	    Acc
-    end.
+write_cache(Tid,InodeI,Data,Offset,Config) ->
+    write_cache(Tid,InodeI,Data,Offset,Config,[]).
+write_cache(Tid,InodeI,Data,Offset,Config,Acc) ->
+    ChunkSize = ffs_lib:get_value(chunk_size,Config),
+    {NewOffset,Chunks} = ffs_fat:read(Tid,InodeI,size(Data),Offset),
+	Inode = ffs_fat:lookup(Tid,InodeI),
+	{ok,FirstChunkData} = get_chunkdata(Inode#ffs_inode.write_cache,Chunks),
+	<<Head:NewOffset/binary,FirstChunkDataTail/binary>> = <<FirstChunkData/binary>>,
+	{NewCache,Actions} = write_cache(Head,FirstChunkDataTail,NewOffset,Data,Chunks,Inode,Tid,ChunkSize,[]),
+	ffs_fat:write_cache(Tid,InodeI,NewCache),
+	Actions.
 
+%% When we have reached the last chunk which needs to be modified
+write_cache(<<Head/binary>>,<<Rest/binary>>,_Offset,<<Data/binary>>,
+			Chunks,Inode,Tid,ChunkSize,Acc) 
+		when size(Data) =< size(Rest); (size(Data) div ChunkSize) == 0 ->
+	DataSize = size(Data),
+	RestData = case Rest of
+					<<_Pre:DataSize/binary,T/binary>> ->
+						T;
+					_Else ->
+						<<"">>
+			end,
+			
+	CachedChunkId = if 
+						Chunks == [] -> -1; 
+						true -> (hd(Chunks))#ffs_chunk.id
+					end,
+			
+	{{CachedChunkId,<<Head/binary,Data/binary,RestData/binary>>},
+	 lists:reverse(Acc)};
+%% When this and more chunks have to be modified
+write_cache(<<Head/binary>>,<<_Rest/binary>>,Offset,WholeData,
+			Chunks,Inode,Tid,ChunkSize,Acc) ->
+	DataSize = get_chunksize(Chunks,ChunkSize) - Offset,
+
+	<<Data:DataSize/binary,RestData/binary>> = <<WholeData/binary>>,
+	
+	NewChunkData = <<Head/binary,Data/binary>>,
+	
+	{ok,NextChunkData} = get_chunkdata(undefined,safe_tl(Chunks)),
+	
+	ChunkUpdate = chunk_update(Chunks,NewChunkData),
+	
+	write_cache(<<>>,NextChunkData,0,RestData,safe_tl(Chunks),
+				Inode,Tid,ChunkSize,
+				ChunkUpdate++Acc).
+
+get_chunksize([#ffs_chunk{ size = Size }|_T],_) ->
+	Size;
+get_chunksize(_,ChunkSize) ->
+	ChunkSize.
+
+chunk_update([],Data) ->
+	[{append_chunk,Data}];
+chunk_update([Chunk|_T],Data) ->
+	[{update_chunk,Chunk,Data}].
+	
+safe_tl([]) ->
+	[];
+safe_tl([_|T]) ->
+	T.
+	
+get_chunkdata({Id,Data},[#ffs_chunk{ id = Id }|_T]) ->
+	{ok,Data};
+get_chunkdata({_Id,Data},[]) ->
+	{ok,Data};
+get_chunkdata(_,[Chunk|_]) ->
+	{ok,read_chunks([Chunk])};
+get_chunkdata(_,_) ->
+	{ok,<<"">>}.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -149,7 +197,7 @@ flush(FsName, InodeI ) ->
 	[] ->
 	    ok;
 	Chunks ->
-	    update_chunks(Chunks, Config)
+	    update_chunks(Chunks, Tid, Config)
     end.
 
 %%--------------------------------------------------------------------
@@ -295,7 +343,7 @@ init(Name) ->
     Config = [{block_size,512},
 	      {inode_limit,1 bsl 32},
 	      {filesystem_id,1},
-	      {chunk_size,1 bsl 15}, %% 32 kB
+	      {chunk_size,1 bsl 3}, %% 8 B
 	      {mnt_opts,0},
 	      {max_filename_size,36#sup},
               {uid,-1},
@@ -303,8 +351,7 @@ init(Name) ->
               {mode,755}],
     ffs_config:write({fs_config, Name}, Config), 
     
-    Tid = ffs_fat:init(list_to_atom(Name),
-		       ffs_lib:get_value(chunk_size,Config),
+    Tid = ffs_fat:init(Name,
 		       ffs_lib:get_value(uid,Config),
 		       ffs_lib:get_value(gid,Config),
 		       ffs_lib:get_value(mode,Config)),
@@ -317,10 +364,11 @@ init(Name) ->
 
 store_chunk(ChunkId,Data,_Config) ->
     io:format("Storing ~p\n",[ChunkId]),
-    ffs_chunk_server:write(ChunkId,Data),
+    %ffs_chunk_server:write(ChunkId,Data),
     ok.
 
 delete_chunk(ChunkId,_Config) ->
+	io:format("Deleting ~p\n",[ChunkId]),
     ok.
 
 read_chunks(Chunks) ->

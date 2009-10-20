@@ -492,9 +492,9 @@ delete_xattr(#ffs_tid{}, _Inode, _Key) ->
 %%      Id = integer()
 %% @end
 %%--------------------------------------------------------------------
-write_cache(Tid,InodeI,Chunk) ->
+write_cache(Tid,InodeI,Cache) ->
     Inode = lookup(Tid,InodeI),
-    ets:insert(Tid#ffs_tid.inode,Inode#ffs_inode{ write_cache = Chunk }).
+    ets:insert(Tid#ffs_tid.inode,Inode#ffs_inode{ write_cache = Cache }).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -530,19 +530,20 @@ read(Tid,InodeI,Length,Offset) ->
     Inode = lookup(Tid,InodeI),
 	read_chunks(Inode#ffs_inode.chunks,0,Offset,Length).
 
-%% Wonder if I should have a basecase here? It would happen if the 
-%% offset it outside the size of the file which is very strange. 
+read_chunks([],CurrSize,Offset,Length) ->
+	{Offset - CurrSize,[]};
 read_chunks([#ffs_chunk{ size = Size } = Chunk|T], CurrSize, Offset, Length) 
 		when (Size + CurrSize) > Offset ->
 	{Offset-CurrSize, read_data(T,Size - (Offset-CurrSize),[Chunk],Length)};
 read_chunks([#ffs_chunk{ size = Size } = Chunk|T], CurrSize, Offset, Length) ->
 	read_chunks(T, CurrSize+Size, Offset, Length).
 
-
-read_data(_, CurrLength, Acc, Length) when CurrLength >= Length ->
+%% If we have read all chunks
+read_data(Chunks, CurrLength, Acc, Length) 
+		when Chunks == [];CurrLength == Length ->
 	lists:reverse(Acc);
 read_data([#ffs_chunk{ size = Size } = Chunk|T], CurrLength, Acc, Length) 
-		when (CurrLength + Size) >= Length ->
+		when (CurrLength + Size + 1) > Length ->
 	lists:reverse([Chunk|Acc]);
 read_data([#ffs_chunk{ size = Size } = Chunk|T], CurrLength, Acc, Length) ->
 	read_data(T,CurrLength + Size,[Chunk|Acc],Length).
