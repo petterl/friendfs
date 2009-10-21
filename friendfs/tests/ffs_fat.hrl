@@ -10,7 +10,7 @@ init_test_() ->
     Setup = fun() ->
 		    catch ets:delete(?COUNTER_TABLE),
 		    init_counters(),
-		    Tid = init(test,1 bsl 15),
+            Tid = init(test,-1,-1,1 bsl 15),
 		    Tid
 	    end,
     Tests =
@@ -50,7 +50,7 @@ write_test_() ->
 		    catch ets:delete(?COUNTER_TABLE),
 		    init_counters(),
 		    application:start(crypto),
-		    Tid = init(test,1 bsl 10),
+		    Tid = init(test,-1,-1,1 bsl 10),
 		    Tid
 	    end,
     Tests = fun(Tid) ->
