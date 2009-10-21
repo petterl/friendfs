@@ -10,6 +10,7 @@
 -behaviour(gen_server).
 
 -include_lib("kernel/include/file.hrl").
+-include("friendfs.hrl").
 
 -export([start_link/2]).
 
@@ -125,17 +126,20 @@ handle_cast({read, Path, From, Ref}, State) ->
     {noreply, State, ?REFRESH_INTERVAL};
 
 handle_cast({write, Cid, Data, From, Ref}, State) ->
+    ?DBG("write start", []),
     case file:write_file(join(State#state.path, Cid), Data) of
-	ok ->
-	    State1 = State#state{chunks = State#state.chunks ++ [Cid]},
-	    %% Tell chunkserver that we stored the data
-	    gen_server:cast(ffs_chunk_server, {write_callback, Ref, ok}),
-	    %% Send it to requesting process
-	    gen_server:reply(From, ok);
-	{error, _} = Err ->
-	    State1 = State,
-	    %% Tell chunkserver that we stored the data
-	    gen_server:cast(ffs_chunk_server, {write_callback, Ref, Err})
+        ok ->	
+            ?DBG("write ok", []),
+            State1 = State#state{chunks = State#state.chunks ++ [Cid]},
+            % Tell chunkserver that we stored the data
+            gen_server:cast(ffs_chunk_server, {write_callback, Ref, ok}),
+            % Send it to requesting process
+            gen_server:reply(From, ok);
+        {error, _} = Err ->
+            ?DBG("write fail: ~p~n", [Err]),
+            State1 = State,
+            % Tell chunkserver that we stored the data
+            gen_server:cast(ffs_chunk_server, {write_callback, Ref, Err})
     end,
     {noreply, State1, ?REFRESH_INTERVAL}.
 

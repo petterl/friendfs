@@ -13,15 +13,18 @@
 -include("friendfs.hrl").
 
 %% API
--export([log_debug/4, log_debug/5, log_error/4]).
+-export([log_debug/4, log_typed/5, log_error/4]).
 
 
 log_error(Mod, Line, Fmt, Vars) ->
+    io:format("~p:~p: **ERROR**:"++Fmt, [Mod, Line|Vars]),
     ok.
 
 log_debug(Mod, Line, Fmt, Vars) ->
+    io:format("~p:~p:"++Fmt, [Mod, Line|Vars]),
     ok.
 
-log_debug(Type, Mod, Line, Fmt, Vars) ->
+log_typed(Type, Mod, Line, Fmt, Vars) ->
+    io:format("~p:~p: #~p# "++Fmt, [Mod, Line, Type|Vars]),
     ok.
 

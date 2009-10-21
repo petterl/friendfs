@@ -150,35 +150,37 @@ handle_cast(_Msg, State) ->
     {noreply, State, ?INTERVAL}.
 
 create_delete_actions() ->
-    Match = ets:match(chunks, #chunk{id='$1', storages='$2', ref_cnt=0, _='_'}),
+    Match = ets:match(chunks, #chunk{id='$1', storages='$2', ref_cnt=0, ratio='$3', _='_'}),
     create_delete_action_tuples(Match).
 create_delete_action_tuples([]) ->
     [];
-create_delete_action_tuples([[_, []] | R]) ->
+create_delete_action_tuples([[_, [], _] | R]) ->
     create_delete_action_tuples(R);
-create_delete_action_tuples([[ChunkId, [StorageUrl | R]] | R2]) ->
+create_delete_action_tuples([[_ChunkId, _StorageUrls, undefined] | R]) ->
+    create_delete_action_tuples(R);
+create_delete_action_tuples([[ChunkId, [StorageUrl | R], Ratio] | R2]) ->
     [{delete, ChunkId, StorageUrl} |
-     create_delete_action_tuples([[ChunkId, R] | R2])].
+     create_delete_action_tuples([[ChunkId, R, Ratio] | R2])].
 
 create_copy_actions() ->
-    Match = ets:match(chunks, #chunk{id='$1', storages='$2', ratio='$3', _='_'}),
+    Match = ets:match(chunks, #chunk{id='$1', storages='$2', ratio='$3', ref_cnt='$4', _='_'}),
     create_copy_action_tuples(Match).
 
 create_copy_action_tuples([]) ->
     [];
-create_copy_action_tuples([[_ChunkId, _Storages, 0]|R]) ->
+create_copy_action_tuples([[_ChunkId, _Storages, _Ratio, 0]|R]) ->
     create_copy_action_tuples(R);
-create_copy_action_tuples([[_ChunkId, _Storages, undefined]|R]) ->
+create_copy_action_tuples([[_ChunkId, _Storages, undefined, _RefCnt]|R]) ->
     create_copy_action_tuples(R);
-create_copy_action_tuples([[_ChunkId, Storages, Ratio]|R])
+create_copy_action_tuples([[_ChunkId, Storages, Ratio, _RefCnt]|R])
   when length(Storages) >= Ratio ->
     create_copy_action_tuples(R);
-create_copy_action_tuples([[ChunkId, Storages, _Ratio] | R])
+create_copy_action_tuples([[ChunkId, Storages, _Ratio, _RefCnt] | R])
   when length(Storages) =< ?HARD_RATIO ->
     % Needs to be replicated now
     [{copy, ChunkId, infinite} |
      create_copy_action_tuples(R)];
-create_copy_action_tuples([[ChunkId, Storages, infinite]|R]) ->
+create_copy_action_tuples([[ChunkId, Storages, infinite, _RefCnt]|R]) ->
     AllStorages = ets:match(storages, #storage{url='$1', _='_'}),
     case lists:filter(
            fun([S]) -> not lists:member(S, Storages) end, AllStorages) of
@@ -187,7 +189,7 @@ create_copy_action_tuples([[ChunkId, Storages, infinite]|R]) ->
             [{copy, ChunkId, length(Remaining)} |
              create_copy_action_tuples(R)]
     end;
-create_copy_action_tuples([[ChunkId, Storages, Ratio]|R]) ->
+create_copy_action_tuples([[ChunkId, Storages, Ratio, _RefCnt]|R]) ->
     Prio = Ratio - length(Storages),
     [{copy, ChunkId, Prio} | create_copy_action_tuples(R)].
 
@@ -263,7 +265,7 @@ action(_A = {delete, ChunkId, StorageUrl}) ->
 action(_A = {copy, ChunkId, _Ratio}) ->
     case ffs_chunk_server:read(ChunkId) of
         {ok, Data} ->
-            ffs_chunk_server:write_replicate(ChunkId, Data);
+            ffs_chunk_server:write(ChunkId, Data, -1);
         _ ->
             {error, {read_error, ChunkId}}
     end;

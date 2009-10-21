@@ -22,7 +22,7 @@
 
 %% Storage API
 -export([read/1, write/2, write/3, delete/1, delete/2]).
--export([write_replicate/2, update_storage/3]).
+-export([update_storage/3]).
 -export([register_chunk/3, info/0]).
 
 %% gen_server callbacks
@@ -121,19 +121,6 @@ write(ChunkId, Data) ->
 write(ChunkId, Data, Ratio) ->
     gen_server:call(?SERVER, {write, ChunkId, Ratio, Data}, infinity).
 
-%%--------------------------------------------------------------------
-%% @doc
-%% Replicate data for chunk to new storages
-%%
-%% Used by replication server when replication of a chunk is needed
-%%
-%% @spec
-%%   write_replicate(chunk_id(), binary()) -> ok | {error, Reason}
-%%     Reason = already_exists | enoent | eacces | eisdir | enotdir | atom()
-%% @end
-%%--------------------------------------------------------------------
-write_replicate(ChunkId, Data) ->
-    gen_server:call(?SERVER, {write_replicate, ChunkId, Data}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -256,22 +243,50 @@ handle_call({ read, ChunkId}, From, State) ->
 handle_call({ write, ChunkId, Ratio, Data}, From, State) ->
     %% Find Chunk from ChunkId
     case ets:lookup(chunks, ChunkId) of
-        [#chunk{ref_cnt=RefCnt, ratio=Ratio0}] ->
-	    %% Cool we already have that chunk!
-	    %% Add 1 to refcounter
-	    ets:update_element(chunks, ChunkId, 
-			       [{#chunk.ref_cnt, RefCnt+1},
-				{#chunk.ratio, erlang:max(Ratio0, Ratio)}]),
-	    {reply, ok, State};
-        [] -> 
-	    StorageUrls = connected_storages(),
-	    %% Choose best server to store on
-            case choose_write_storage(StorageUrls) of
+        [#chunk{storages=StorageUrls, ratio=Ratio0}]
+        when Ratio == -1,
+        Ratio0 =< length(StorageUrls) ->
+            %% Replication call, but enough storages
+            {reply, {error, not_needed}, State};
+        [#chunk{storages=StorageUrls}]
+        when Ratio == -1 ->
+            % We already have chunk, this is a replication call
+            AllStorages = connected_storages(),
+            case choose_write_storage(lists:filter(
+                   fun(#storage{url=Url}) ->
+                           not lists:member(Url, StorageUrls)
+                   end, AllStorages)) of
+                no_storage ->
+                    % Replication requested but not possible
+                    {reply, {error, not_enough_storages}, State};
                 #storage{url = Url, pid = Pid} ->
-		    %% store on one server
+                    ?LOG(chunk_replication, 
+                         "Replicate ~p to ~p~n", [ChunkId, Url]),
+                    % store on one server
                     Ref = make_ref(),
                     TRef = write_with_timer(Pid, ChunkId, Data, From, Ref),
-		    %% Update session with new timer and fewer urls
+		            %% Update session with new timer and fewer urls
+                    StorageUrls2 = StorageUrls -- [Url],
+                    State2 = save_session(Ref, ChunkId, Data, From, Url,
+                                          StorageUrls2, TRef, State),
+                    {noreply, State2}
+            end;
+        [#chunk{ref_cnt=RefCnt, ratio=Ratio0}] ->
+            %% Cool we already have that chunk!
+            %% Add 1 to refcounter
+            ets:update_element(chunks, ChunkId, 
+                               [{#chunk.ref_cnt, RefCnt+1},
+                                {#chunk.ratio, erlang:max(Ratio0, Ratio)}]),
+            {reply, ok, State};
+        [] -> 
+            StorageUrls = connected_storages(),
+            % Choose best server to store on
+            case choose_write_storage(StorageUrls) of
+                #storage{url = Url, pid = Pid} ->
+ 		            %% store on one server
+                    Ref = make_ref(),
+                    TRef = write_with_timer(Pid, ChunkId, Data, From, Ref),
+		            %% Update session with new timer and fewer urls
                     StorageUrls2 = StorageUrls -- [Url],
                     State2 = save_session(Ref, ChunkId, Data, From, Url,
                                           StorageUrls2, TRef, State),
@@ -283,34 +298,6 @@ handle_call({ write, ChunkId, Ratio, Data}, From, State) ->
 		no_storage ->
 		    {reply, {error, no_storage_avail}, State}
 	    end
-    end;
-
-handle_call({ write_replicate, ChunkId, Data}, _From, State) ->
-    case ets:lookup(chunks, ChunkId) of
-        [#chunk{storages = StorageUrls, ratio = Ratio}] when
-           length(StorageUrls) < Ratio ->
-
-            AllStorages = ets:tab2list(storages),
-            case lists:filter(
-                   fun(#storage{url=Url}) ->
-                           not lists:member(Url, StorageUrls)
-                   end, AllStorages) of
-                [] ->
-		    %% Replication requested but not possible
-                    {reply, {error, not_enough_storages}, State};
-                Remaining ->
-                    S = choose_write_storage(Remaining),
-		    ?LOG(chunk_replication, 
-			   "Replicate ~p to ~p~n", [ChunkId, S#storage.url]),
-                    Res = gen_server:call(S#storage.pid, {write, ChunkId, Data}),
-                    ets:update_element(chunks, ChunkId,
-                                       {#chunk.storages, StorageUrls ++ [S#storage.url]}),
-                    {reply, Res, State}
-            end;
-        [#chunk{}] ->
-            {reply, {error, not_needed}, State};
-        [] ->
-            {reply, {error, chunk_not_found}, State}
     end;
 
 handle_call({ delete, ChunkId}, _From, State) ->
@@ -398,7 +385,7 @@ handle_cast({ write_callback, Ref, ok}, State) ->
     ChunkId = get_chunkid(Ref, State),
     Url = get_storage(Ref, State),
     ets:update_element(chunks, ChunkId,
-		       {#chunk.storages, Url}),
+		       {#chunk.storages, [Url]}),
     ffs_chunk_replicator:refresh(),
     {noreply, remove_session(Ref, State)};
 
@@ -412,7 +399,7 @@ handle_cast({ write_callback, Ref, {error, _Err}}, State) ->
     case choose_storage(StorageUrls) of
         #storage{url = Url, pid = Pid} ->
             ChunkId = get_chunkid(Ref, State),
-	    Data = get_data(Ref, State),
+            Data = get_data(Ref, State),
             TRef = write_with_timer(Pid, ChunkId, Data, FromPid, Ref),
             % Update session with new timer and fewer urls
             StorageUrls2 = StorageUrls -- [Url],
@@ -696,22 +683,6 @@ choose_storage([StorageUrl | Rest]) ->
 choose_write_storage([]) -> no_storage;
 choose_write_storage(Storages) ->
     lists:nth(random:uniform(length(Storages)), Storages).
-
-write_to_one([], _ChunkId, _Data) ->
-    {error, failed_to_write};
-write_to_one(Storages, ChunkId, Data) ->
-    case choose_write_storage(Storages) of
-        no_storage -> {error, failed_to_write};
-        S ->
-            case gen_server:call(S#storage.pid, {write, ChunkId, Data}) of
-                ok ->
-                    {ok, S};
-                _ ->
-                    % Failed to store data, try store on next
-                    S2 = lists:delete(S, Storages),
-                    write_to_one(S2, ChunkId, Data)
-            end
-    end.
 
 connected_storages() ->
     ets:tab2list(storages).
