@@ -113,14 +113,24 @@ handle_cast({delete, Cid}, State0) ->
         end,
     {noreply, State, ?REFRESH_INTERVAL};
 
-handle_cast({read, Path, From, Ref}, State) ->
+handle_cast({read, File, From, Ref}, State) ->
     % Read data from file
-    case file:read_file(join(State#state.path, Path)) of
+    case file:read_file(join(State#state.path, File)) of
 	{ok, Data} ->
-	    %% Tell chunkserver that we got the data
-	    gen_server:cast(ffs_chunk_server, {read_callback, Ref, ok}),
-	    %% Send it to requesting process
-	    gen_server:reply(From, {ok, Data});
+        %% Verify that data is correct
+        case ffs_lib:get_chunkid(Data) of
+        File ->
+            %% Same chunkid matches name
+            %% Tell chunkserver that we got the data
+	        gen_server:cast(ffs_chunk_server, {read_callback, Ref, ok}),
+	        %% Send it to requesting process
+	        gen_server:reply(From, {ok, Data});
+        _Checksum ->
+            %% Checksum of file different from filename
+	        gen_server:cast(ffs_chunk_server, {read_callback, Ref, {error, checksum_failed}}),
+            %% Delete bad file
+            file:delete(join(State#state.path, File))
+        end;
 	{error, _} = Err ->
 	    %% Tell chunkserver that we got error
 	    gen_server:cast(ffs_chunk_server, {read_callback, Ref, Err})
