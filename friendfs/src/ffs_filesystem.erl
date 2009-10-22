@@ -83,17 +83,15 @@ write(FsName, InodeI, Data, Offset) ->
     end.
 
 update_chunks([{append_chunk, ChunkData} | R], InodeI, Tid, Config) ->
-	ChunkId = ffs_lib:get_chunkid(ChunkData),
 	ChunkPos = length((ffs_fat:lookup(Tid,InodeI))#ffs_inode.chunks),
+    {ok, ChunkId} = store_chunk(ChunkData,Config),
 	update_inode(Tid,InodeI,ChunkPos,ChunkId,size(ChunkData)),
-    store_chunk(ChunkId,ChunkData,Config),
     update_chunks(R, InodeI, Tid, Config);
 update_chunks([{update_chunk, #ffs_chunk{ chunkid = OldChunkId,
  										  id = ChunkPos }, ChunkData} | R], 
 		InodeI, Tid, Config) ->
-	NewChunkId = ffs_lib:get_chunkid(ChunkData),
+	{ok, NewChunkId} = store_chunk(ChunkData,Config),
 	update_inode(Tid,InodeI,ChunkPos,NewChunkId,size(ChunkData)),
-	store_chunk(NewChunkId,ChunkData,Config),
     delete_chunk(OldChunkId, Config),
     update_chunks(R, InodeI, Tid, Config);
 update_chunks([],_InodeI, _Tid, _Config) ->
@@ -369,10 +367,9 @@ init(Name) ->
 %%% Internal functions
 %%%==================================================================
 
-store_chunk(ChunkId,Data,_Config) ->
-    io:format("Storing ~p\n",[ChunkId]),
-    ffs_chunk_server:write(ChunkId,Data),
-    ok.
+store_chunk(Data,_Config) ->
+    io:format("Storing data\n",[]),
+    ffs_chunk_server:write(Data).
 
 delete_chunk(ChunkId,_Config) ->
 	io:format("Deleting ~p\n",[ChunkId]),

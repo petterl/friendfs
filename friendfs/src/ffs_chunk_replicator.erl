@@ -265,7 +265,7 @@ action(_A = {delete, ChunkId, StorageUrl}) ->
 action(_A = {copy, ChunkId, _Ratio}) ->
     case ffs_chunk_server:read(ChunkId) of
         {ok, Data} ->
-            ffs_chunk_server:write(ChunkId, Data, -1);
+            ffs_chunk_server:write(Data, -1);
         _ ->
             {error, {read_error, ChunkId}}
     end;

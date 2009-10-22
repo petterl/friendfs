@@ -56,8 +56,10 @@ init([Url, _Config]) ->
 			Host++UrlPath
 	end,
     case file:list_dir(Path) of
-        {ok, _List} ->
-    	    {ok, #state{url=Url, path=Path}, ?REFRESH_INTERVAL};
+        {ok, Files} ->
+            % TODO: Verify storage here
+            ffs_chunk_server:update_storage(Url, self(), Files),
+    	    {ok, #state{url=Url, path=Path, chunks = Files}, ?REFRESH_INTERVAL};
         {error, _} ->
 	        {stop, bad_path_for_storage, Path}
     end.
@@ -134,7 +136,7 @@ handle_cast({write, Cid, Data, From, Ref}, State) ->
             % Tell chunkserver that we stored the data
             gen_server:cast(ffs_chunk_server, {write_callback, Ref, ok}),
             % Send it to requesting process
-            gen_server:reply(From, ok);
+            gen_server:reply(From, {ok, Cid});
         {error, _} = Err ->
             ?DBG("write fail: ~p~n", [Err]),
             State1 = State,

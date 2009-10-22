@@ -21,7 +21,7 @@
 -export([start/1]).
 
 %% Storage API
--export([read/1, write/2, write/3, delete/1, delete/2]).
+-export([read/1, write/2, delete/1, delete/2]).
 -export([update_storage/3]).
 -export([register_chunk/3, info/0]).
 
@@ -100,26 +100,21 @@ start(Config) ->
 read(ChunkId) ->
     gen_server:call(?SERVER, {read, ChunkId}, infinity).
 
-%% --------------------------------------------------------------------
-%% @equiv write(ChunkId, Data, 1000)
-%% @end
-%% --------------------------------------------------------------------
-write(ChunkId, Data) ->
-    write(ChunkId, Data, 1000).
-
 %%--------------------------------------------------------------------
 %% @doc
-%% Create or Update data for a chunk in storages
+%% Create a chunk in storages using data sent to function.
 %% Ratio is a a value of how many storages it should atleast be stored on.
 %%
+%% Data is MD5 checksummed and then stored. If we already have a
+%% chunk with the same checksum, it is never stored.
+%%
 %% @spec
-%%   write(chunk_id(), binary(), Ratio) -> ok | {error, Reason}
-%%     Ratio = integer()
+%%   write(binary(), Ratio :: integer()) -> {ok, chunk_id()} | {error, Reason}
 %%     Reason = no_storage_avail | atom()
 %% @end
 %%--------------------------------------------------------------------
-write(ChunkId, Data, Ratio) ->
-    gen_server:call(?SERVER, {write, ChunkId, Ratio, Data}, infinity).
+write(Data, Ratio) ->
+    gen_server:call(?SERVER, {write, Ratio, Data}, infinity).
 
 
 %%--------------------------------------------------------------------
@@ -240,7 +235,9 @@ handle_call({ read, ChunkId}, From, State) ->
             {reply, {error, enoent}, State}
     end;
 
-handle_call({ write, ChunkId, Ratio, Data}, From, State) ->
+handle_call({ write, Ratio, Data}, From, State) ->
+    %% Generate chunkid from Data
+    ChunkId = ffs_lib:get_chunkid(Data),
     %% Find Chunk from ChunkId
     case ets:lookup(chunks, ChunkId) of
         [#chunk{storages=StorageUrls, ratio=Ratio0}]
@@ -277,7 +274,7 @@ handle_call({ write, ChunkId, Ratio, Data}, From, State) ->
             ets:update_element(chunks, ChunkId, 
                                [{#chunk.ref_cnt, RefCnt+1},
                                 {#chunk.ratio, erlang:max(Ratio0, Ratio)}]),
-            {reply, ok, State};
+            {reply, {ok, ChunkId}, State};
         [] -> 
             StorageUrls = connected_storages(),
             % Choose best server to store on

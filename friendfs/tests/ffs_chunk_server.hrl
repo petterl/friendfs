@@ -9,7 +9,8 @@
 
 write_test_() ->
     Setup = fun() ->
-		    ffs_chunk_server:start(eunit_test),
+                    crypto:start(),
+                    ffs_chunk_server:start(eunit_test),
 		    file:make_dir("/tmp/ffs_eunit"),
 		    ffs_storage_file:start_link("file:///tmp/ffs_eunit",
 						eunit_test),
@@ -18,9 +19,9 @@ write_test_() ->
 	    end,
 
     Tests =
-	fun(FileName) ->
-		[?_assertEqual(ok,ffs_chunk_server:write(FileName,<<"testdata">>)),
-		 ?_assertEqual({ok,<<"testdata">>},ffs_chunk_server:read(FileName))]
+	fun(_Data) ->
+            {ok, ChunkId} = ffs_chunk_server:write(<<"testdata">>,1), 
+            [?_assertEqual({ok,<<"testdata">>},ffs_chunk_server:read(ChunkId))]
 	end,
     {setup,Setup,Tests}.
 		     
