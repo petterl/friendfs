@@ -55,7 +55,7 @@ start(Type) ->
 %%--------------------------------------------------------------------
 start(_Type, _Args) ->
     {ok,ConfigPath} = application:get_env(friendfs,config_path),
-    {ok,DefaultsPath} = application:get_env(friendfs,config_default_path),
+    {ok,_DefaultsPath} = application:get_env(friendfs,config_default_path),
     ffs_config:init(),
     
     case ffs_config:parse_config(ConfigPath) of

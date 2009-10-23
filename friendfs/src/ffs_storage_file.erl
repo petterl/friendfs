@@ -10,7 +10,7 @@
 -behaviour(gen_server).
 
 -include_lib("kernel/include/file.hrl").
--include("friendfs.hrl").
+-include("debug.hrl").
 
 -export([start_link/2]).
 

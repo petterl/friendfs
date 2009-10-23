@@ -17,14 +17,14 @@
 
 
 log_error(Mod, Line, Fmt, Vars) ->
-    io:format("~p:~p: **ERROR**:"++Fmt, [Mod, Line|Vars]),
+    io:format("~p:~p: **ERROR**:"++Fmt++"\n", [Mod, Line|Vars]),
     ok.
 
 log_debug(Mod, Line, Fmt, Vars) ->
-    io:format("~p:~p:"++Fmt, [Mod, Line|Vars]),
+    io:format("~p:~p:"++Fmt++"\n", [Mod, Line|Vars]),
     ok.
 
 log_typed(Type, Mod, Line, Fmt, Vars) ->
-    io:format("~p:~p: #~p# "++Fmt, [Mod, Line, Type|Vars]),
+    io:format("~p:~p: #~p# "++Fmt++"\n", [Mod, Line, Type|Vars]),
     ok.
 

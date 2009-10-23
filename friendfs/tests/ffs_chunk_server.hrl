@@ -8,21 +8,28 @@
 
 
 write_test_() ->
-    Setup = fun() ->
-                    crypto:start(),
-                    ffs_chunk_server:start(eunit_test),
-		    file:make_dir("/tmp/ffs_eunit"),
-		    ffs_storage_file:start_link("file:///tmp/ffs_eunit",
-						eunit_test),
-		    timer:sleep(11000),
-		    lists:flatten(io_lib:format("~p",[element(3,now())]))
-	    end,
-
+    Setup =
+        fun() ->
+                crypto:start(),
+                ffs_chunk_server:start(eunit_test),
+                file:make_dir("/tmp/ffs_eunit"),
+                ffs_storage_file:start_link("file:///tmp/ffs_eunit",
+                                            eunit_test),
+                list_to_binary(lists:flatten(io_lib:format("~p",[element(3,now())])))
+        
+        end,
     Tests =
-	fun(_Data) ->
-            {ok, ChunkId} = ffs_chunk_server:write(<<"testdata">>,1), 
-            [?_assertEqual({ok,<<"testdata">>},ffs_chunk_server:read(ChunkId))]
-	end,
-    {setup,Setup,Tests}.
-		     
+        fun(Data) ->
+                io:format("Data: ~p~n", [Data]),
+                {ok, ChunkId} = ffs_chunk_server:write(Data,1), 
+                [?_assertEqual({ok,Data},file:read_file("/tmp/ffs_eunit/"++ChunkId)),
+                 ?_assertEqual({ok,Data},ffs_chunk_server:read(ChunkId))]
+
+        end,
+    {"Test writing and reading data", {setup,Setup,Tests}}.
+
     
+ 
+ 
+ 
+ 

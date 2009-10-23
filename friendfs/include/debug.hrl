@@ -1,0 +1,3 @@
+-define(ERR(Fmt, Vars), ffs_debug:log_error(?MODULE, ?LINE, Fmt, Vars)).
+-define(DBG(Fmt, Vars), ffs_debug:log_debug(?MODULE, ?LINE, Fmt, Vars)).
+-define(LOG(Type, Fmt, Vars), ffs_debug:log_typed(Type, ?MODULE, ?LINE, Fmt, Vars)).

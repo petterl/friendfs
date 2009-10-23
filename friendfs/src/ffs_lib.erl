@@ -8,7 +8,9 @@
 
 
 -export([split_url/1,urlsplit_scheme/1,read_config/2,parse_config/1,scan_config_str/2]).
--export([get_value/2,get_chunkid/1,get_hash/1,print_base64/1,pmap/2]).
+-export([path_split/1,get_value/2,get_chunkid/1,get_hash/1,print_base64/1,pmap/2]).
+-export([urlunsplit/1,
+         urlunsplit_path/1]).
 -define(DELIMS,[$ ,$\n,$#,$>,$<,$\t]).
 
 split_url(Url) ->
@@ -221,35 +223,35 @@ get_chunkid16(<<D/integer,Rest/binary>>,Acc) when D < 16 ->
 get_chunkid16(<<>>,Acc) ->
 	lists:reverse(Acc).
 
-get_chunkid64(Sha) ->
-	get_chunkid64(Sha,"").
-get_chunkid64(<<D1:12,D2:12,Rest/binary>>,Acc) ->
-	RevFirst = int64_to_string(D1),
-	RevSecond = int64_to_string(D2),
-	RevStr = RevSecond ++ RevFirst,
-	get_chunkid64(Rest,RevStr ++ Acc);
-get_chunkid64(<<>>,Acc) ->
-	lists:reverse(lists:flatten(Acc)).
+%% get_chunkid64(Sha) ->
+%% 	get_chunkid64(Sha,"").
+%% get_chunkid64(<<D1:12,D2:12,Rest/binary>>,Acc) ->
+%% 	RevFirst = int64_to_string(D1),
+%% 	RevSecond = int64_to_string(D2),
+%% 	RevStr = RevSecond ++ RevFirst,
+%% 	get_chunkid64(Rest,RevStr ++ Acc);
+%% get_chunkid64(<<>>,Acc) ->
+%% 	lists:reverse(lists:flatten(Acc)).
 
-int64_to_string(Int) when Int < 64 ->
-	[base64_enc(Int),$0];
-int64_to_string(Int) when Int < (1 bsl 12) ->
-	[base64_enc((Int rem (1 bsl 6))),base64_enc(Int bsr 6)].
+%% int64_to_string(Int) when Int < 64 ->
+%% 	[base64_enc(Int),$0];
+%% int64_to_string(Int) when Int < (1 bsl 12) ->
+%% 	[base64_enc((Int rem (1 bsl 6))),base64_enc(Int bsr 6)].
 
-base64_enc(Int) when Int < 10 ->
-	$0+Int;
-base64_enc(Int) when Int < 35 ->
-	$a+Int-10;
-base64_enc(Int) when Int < 60 ->
-	$A+Int-35;
-base64_enc(60) ->
-	$_;
-base64_enc(61) ->
-	$-;
-base64_enc(62) ->
-	$.;
-base64_enc(63) ->
-	$%.
+%% base64_enc(Int) when Int < 10 ->
+%% 	$0+Int;
+%% base64_enc(Int) when Int < 35 ->
+%% 	$a+Int-10;
+%% base64_enc(Int) when Int < 60 ->
+%% 	$A+Int-35;
+%% base64_enc(60) ->
+%% 	$_;
+%% base64_enc(61) ->
+%% 	$-;
+%% base64_enc(62) ->
+%% 	$.;
+%% base64_enc(63) ->
+%% 	$%.
 
 get_hash(ChunkId) ->
 	get_hash(lists:reverse(ChunkId),<<>>).

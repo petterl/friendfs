@@ -16,6 +16,7 @@
 
 -behaviour(gen_server).
 -include("friendfs.hrl").
+-include("debug.hrl").
 
 %% API
 -export([start/1]).
@@ -219,7 +220,7 @@ handle_call({ read, ChunkId}, From, State) ->
     case ets:lookup(chunks, ChunkId) of
         [#chunk{storages = StorageUrls}] ->
 	    %% Get the prefered storage to fetch from
-            case choose_storage(StorageUrls) of
+            case select_read_storage(StorageUrls) of
                 #storage{url = Url, pid = Pid}->
                     Ref = make_ref(),
                     TRef = read_with_timer(Pid, ChunkId, From, Ref),
@@ -249,7 +250,7 @@ handle_call({ write, Ratio, Data}, From, State) ->
         when Ratio == -1 ->
             % We already have chunk, this is a replication call
             AllStorages = connected_storages(),
-            case choose_write_storage(lists:filter(
+            case select_write_storage(lists:filter(
                    fun(#storage{url=Url}) ->
                            not lists:member(Url, StorageUrls)
                    end, AllStorages)) of
@@ -277,8 +278,8 @@ handle_call({ write, Ratio, Data}, From, State) ->
             {reply, {ok, ChunkId}, State};
         [] -> 
             StorageUrls = connected_storages(),
-            % Choose best server to store on
-            case choose_write_storage(StorageUrls) of
+            % Select best server to store on
+            case select_write_storage(StorageUrls) of
                 #storage{url = Url, pid = Pid} ->
  		            %% store on one server
                     Ref = make_ref(),
@@ -358,7 +359,7 @@ handle_cast({ read_callback, Ref, {error, _Err}}, State) ->
     % Select new storage
     StorageUrls = get_storages(Ref, State),
     FromPid = get_caller(Ref, State),
-    case choose_storage(StorageUrls) of
+    case select_read_storage(StorageUrls) of
         #storage{url = Url, pid = Pid} ->
             ChunkId = get_chunkid(Ref, State),
             TRef = read_with_timer(Pid, ChunkId, FromPid, Ref),
@@ -393,7 +394,7 @@ handle_cast({ write_callback, Ref, {error, _Err}}, State) ->
     % Select new storage
     StorageUrls = get_storages(Ref, State),
     FromPid = get_caller(Ref, State),
-    case choose_storage(StorageUrls) of
+    case select_write_storage(StorageUrls) of
         #storage{url = Url, pid = Pid} ->
             ChunkId = get_chunkid(Ref, State),
             Data = get_data(Ref, State),
@@ -616,14 +617,8 @@ write_with_timer(Pid, ChunkId, Data, FromPid, Ref) ->
                                      {error, timeout}}]),
     TRef.
 
-%%--------------------------------------------------------------------
-%% @doc
-%% Adds the Storage (URL) in the list of storages for each chunk in Chunklist
-%%
-%% @spec add_storage_to_chunks(AllChunks, ChunksInThisStore, Storage) -> list()
-%% @end
-%%--------------------------------------------------------------------
 
+%% Adds the Storage (URL) to the list of storages for each chunk 
 add_storage_to_chunks([], _StorageUrl) ->
     [];
 add_storage_to_chunks([ChunkId | R], StorageUrl) ->
@@ -641,6 +636,7 @@ add_storage_to_chunks([ChunkId | R], StorageUrl) ->
     end,
     add_storage_to_chunks(R, StorageUrl).
 
+%% Remove the Storage (URL) to the list of storages for each chunk 
 remove_storage_from_chunks([], _StorageUrl) ->
     [];
 remove_storage_from_chunks(all, StorageUrl) ->
@@ -667,18 +663,20 @@ remove_storage_from_chunks([ChunkId | R], StorageUrl) ->
     end,
     remove_storage_from_chunks(R, StorageUrl).
 
-choose_storage([]) ->
+%% Selects a read storage to use
+select_read_storage([]) ->
     not_found;
-choose_storage([StorageUrl | Rest]) ->
+select_read_storage([StorageUrl | Rest]) ->
     case ets:lookup(storages, StorageUrl) of
         [S = #storage{}] -> S;
         [] ->
             % Storage not connected
-            choose_storage(Rest)
+            select_read_storage(Rest)
     end.
 
-choose_write_storage([]) -> no_storage;
-choose_write_storage(Storages) ->
+%% Selects a write stroage to use
+select_write_storage([]) -> no_storage;
+select_write_storage(Storages) ->
     lists:nth(random:uniform(length(Storages)), Storages).
 
 connected_storages() ->
