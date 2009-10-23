@@ -2,7 +2,7 @@ EBIN=../ebin
 INCLUDE=../include
 TEST_DIR=../tests
 ROOTDIR=../..
-DBG_DIR=dbg/
+DBG_DIR=$(EBIN)/dbg
 ERL_CALL=erl_call
 ERL_COMPILE_FLAGS += -I$(INCLUDE) +warn_unused_vars +nowarn_shadow_vars +warn_unused_import +debug_info
 
@@ -36,8 +36,6 @@ clean:
 $(EBIN)/%.beam:%.erl
 	@echo " * Compiling $<"
 	@erlc -W $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
-	@echo " * Copy $@ to $(ROOTDIR)/patches"
-	-@cp $@ $(ROOTDIR)/patches/
 	@echo " * Load $(basename $<) into node $(ERL_SNAME)"
 	-@$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a "code purge [$(basename $<)]" > /dev/null
 	-@$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a "code delete [$(basename $<)]"  > /dev/null

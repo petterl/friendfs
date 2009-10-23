@@ -28,6 +28,7 @@
 
 -behaviour(gen_server).
 -include("friendfs.hrl").
+-include("debug.hrl").
 
 %% API
 -export([start/1]).
@@ -193,10 +194,11 @@ create_copy_action_tuples([[ChunkId, Storages, Ratio, _RefCnt]|R]) ->
     Prio = Ratio - length(Storages),
     [{copy, ChunkId, Prio} | create_copy_action_tuples(R)].
 
+%% Prioritize list
 prioritize({copy, _, _}, {delete, _, _}) ->   true;
 prioritize({delete, _, _}, {delete, _, _}) -> true;
-prioritize({copy, _, Ratio1}, {copy, _, Ratio2})
-  when Ratio1 > Ratio2 ->
+prioritize({copy, _, Prio}, {copy, _, Prio2})
+  when Prio > Prio2 ->
     true;
 prioritize({copy, _, infinite}, _) ->
     true;
@@ -216,10 +218,10 @@ handle_info(timeout, State = #state{queue=[]}) ->
     {noreply, State, ?INTERVAL};
 handle_info(timeout, State = #state{queue=[Action | Queue]}) ->
     Res = action(Action),
-    io:format("~p: ~p -> ~p~n", [?MODULE, Action, Res]),
+    ?DBG("~p: ~p -> ~p~n", [?MODULE, Action, Res]),
     {noreply, State#state{queue=Queue}, ?INTERVAL};
 handle_info(_Info, State) ->
-    io:format("Info ~p~n", [_Info]),
+    ?ERR("Info not handled: ~p~n", [_Info]),
     {noreply, State, ?INTERVAL}.
 
 %%--------------------------------------------------------------------
@@ -265,7 +267,7 @@ action(_A = {delete, ChunkId, StorageUrl}) ->
 action(_A = {copy, ChunkId, _Ratio}) ->
     case ffs_chunk_server:read(ChunkId) of
         {ok, Data} ->
-            ffs_chunk_server:write(ChunkId, Data, -1);
+            ffs_chunk_server:write(Data, -1);
         _ ->
             {error, {read_error, ChunkId}}
     end;

@@ -10,7 +10,7 @@
 -behaviour(gen_server).
 
 -include_lib("kernel/include/file.hrl").
--include("friendfs.hrl").
+-include("debug.hrl").
 
 -export([start_link/2]).
 
@@ -56,8 +56,10 @@ init([Url, _Config]) ->
 			Host++UrlPath
 	end,
     case file:list_dir(Path) of
-        {ok, _List} ->
-    	    {ok, #state{url=Url, path=Path}, ?REFRESH_INTERVAL};
+        {ok, Files} ->
+            % TODO: Verify storage here
+            ffs_chunk_server:update_storage(Url, self(), Files),
+    	    {ok, #state{url=Url, path=Path, chunks = Files}, ?REFRESH_INTERVAL};
         {error, _} ->
 	        {stop, bad_path_for_storage, Path}
     end.
@@ -82,9 +84,8 @@ handle_call(list, _From, State) ->
     {reply, Res, State, ?REFRESH_INTERVAL};
 
 handle_call(refresh, _From, State) ->
-    {ok, Files} = file:list_dir(State#state.path),
-    ffs_chunk_server:update_storage(State#state.url, self(), Files, all),
-    {reply, Files, State, ?REFRESH_INTERVAL};
+    State2 = refresh_storage(State),
+    {reply, ok, State2, ?REFRESH_INTERVAL};
 
 handle_call(info, _From, State) ->
     {reply, State, State, ?REFRESH_INTERVAL}.
@@ -111,14 +112,24 @@ handle_cast({delete, Cid}, State0) ->
         end,
     {noreply, State, ?REFRESH_INTERVAL};
 
-handle_cast({read, Path, From, Ref}, State) ->
+handle_cast({read, File, From, Ref}, State) ->
     % Read data from file
-    case file:read_file(join(State#state.path, Path)) of
+    case file:read_file(join(State#state.path, File)) of
 	{ok, Data} ->
-	    %% Tell chunkserver that we got the data
-	    gen_server:cast(ffs_chunk_server, {read_callback, Ref, ok}),
-	    %% Send it to requesting process
-	    gen_server:reply(From, {ok, Data});
+        %% Verify that data is correct
+        case ffs_lib:get_chunkid(Data) of
+        File ->
+            %% Same chunkid matches name
+            %% Tell chunkserver that we got the data
+	        gen_server:cast(ffs_chunk_server, {read_callback, Ref, ok}),
+	        %% Send it to requesting process
+	        gen_server:reply(From, {ok, Data});
+        _Checksum ->
+            %% Checksum of file different from filename
+	        gen_server:cast(ffs_chunk_server, {read_callback, Ref, {error, checksum_failed}}),
+            %% Delete bad file
+            file:delete(join(State#state.path, File))
+        end;
 	{error, _} = Err ->
 	    %% Tell chunkserver that we got error
 	    gen_server:cast(ffs_chunk_server, {read_callback, Ref, Err})
@@ -134,7 +145,7 @@ handle_cast({write, Cid, Data, From, Ref}, State) ->
             % Tell chunkserver that we stored the data
             gen_server:cast(ffs_chunk_server, {write_callback, Ref, ok}),
             % Send it to requesting process
-            gen_server:reply(From, ok);
+            gen_server:reply(From, {ok, Cid});
         {error, _} = Err ->
             ?DBG("write fail: ~p~n", [Err]),
             State1 = State,

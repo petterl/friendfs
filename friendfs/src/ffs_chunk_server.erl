@@ -16,12 +16,13 @@
 
 -behaviour(gen_server).
 -include("friendfs.hrl").
+-include("debug.hrl").
 
 %% API
 -export([start/1]).
 
 %% Storage API
--export([read/1, write/2, write/3, delete/1, delete/2]).
+-export([read/1, write/2, delete/1, delete/2]).
 -export([update_storage/3]).
 -export([register_chunk/3, info/0]).
 
@@ -100,26 +101,21 @@ start(Config) ->
 read(ChunkId) ->
     gen_server:call(?SERVER, {read, ChunkId}, infinity).
 
-%% --------------------------------------------------------------------
-%% @equiv write(ChunkId, Data, 1000)
-%% @end
-%% --------------------------------------------------------------------
-write(ChunkId, Data) ->
-    write(ChunkId, Data, 1000).
-
 %%--------------------------------------------------------------------
 %% @doc
-%% Create or Update data for a chunk in storages
+%% Create a chunk in storages using data sent to function.
 %% Ratio is a a value of how many storages it should atleast be stored on.
 %%
+%% Data is MD5 checksummed and then stored. If we already have a
+%% chunk with the same checksum, it is never stored.
+%%
 %% @spec
-%%   write(chunk_id(), binary(), Ratio) -> ok | {error, Reason}
-%%     Ratio = integer()
+%%   write(binary(), Ratio :: integer()) -> {ok, chunk_id()} | {error, Reason}
 %%     Reason = no_storage_avail | atom()
 %% @end
 %%--------------------------------------------------------------------
-write(ChunkId, Data, Ratio) ->
-    gen_server:call(?SERVER, {write, ChunkId, Ratio, Data}, infinity).
+write(Data, Ratio) ->
+    gen_server:call(?SERVER, {write, Ratio, Data}, infinity).
 
 
 %%--------------------------------------------------------------------
@@ -224,7 +220,7 @@ handle_call({ read, ChunkId}, From, State) ->
     case ets:lookup(chunks, ChunkId) of
         [#chunk{storages = StorageUrls}] ->
 	    %% Get the prefered storage to fetch from
-            case choose_storage(StorageUrls) of
+            case select_read_storage(StorageUrls) of
                 #storage{url = Url, pid = Pid}->
                     Ref = make_ref(),
                     TRef = read_with_timer(Pid, ChunkId, From, Ref),
@@ -240,7 +236,9 @@ handle_call({ read, ChunkId}, From, State) ->
             {reply, {error, enoent}, State}
     end;
 
-handle_call({ write, ChunkId, Ratio, Data}, From, State) ->
+handle_call({ write, Ratio, Data}, From, State) ->
+    %% Generate chunkid from Data
+    ChunkId = ffs_lib:get_chunkid(Data),
     %% Find Chunk from ChunkId
     case ets:lookup(chunks, ChunkId) of
         [#chunk{storages=StorageUrls, ratio=Ratio0}]
@@ -252,7 +250,7 @@ handle_call({ write, ChunkId, Ratio, Data}, From, State) ->
         when Ratio == -1 ->
             % We already have chunk, this is a replication call
             AllStorages = connected_storages(),
-            case choose_write_storage(lists:filter(
+            case select_write_storage(lists:filter(
                    fun(#storage{url=Url}) ->
                            not lists:member(Url, StorageUrls)
                    end, AllStorages)) of
@@ -277,11 +275,11 @@ handle_call({ write, ChunkId, Ratio, Data}, From, State) ->
             ets:update_element(chunks, ChunkId, 
                                [{#chunk.ref_cnt, RefCnt+1},
                                 {#chunk.ratio, erlang:max(Ratio0, Ratio)}]),
-            {reply, ok, State};
+            {reply, {ok, ChunkId}, State};
         [] -> 
             StorageUrls = connected_storages(),
-            % Choose best server to store on
-            case choose_write_storage(StorageUrls) of
+            % Select best server to store on
+            case select_write_storage(StorageUrls) of
                 #storage{url = Url, pid = Pid} ->
  		            %% store on one server
                     Ref = make_ref(),
@@ -320,8 +318,8 @@ handle_call({ register_chunk, ChunkId, Ratio, _FsName}, _From, State) ->
     Res =
 	case ets:lookup(chunks, ChunkId) of
 	    [#chunk{ref_cnt = RefCnt}] ->
-		ets:update_element(chunks, ChunkId, {#chunk.ratio, Ratio,
-						     #chunk.ref_cnt, RefCnt+1});
+            ets:update_element(chunks, ChunkId, [{#chunk.ratio, Ratio},
+                                                 {#chunk.ref_cnt, RefCnt+1}]);
 	    [] ->
 		ets:insert(chunks, #chunk{id=ChunkId, ratio=Ratio,
 					  ref_cnt = 1})
@@ -361,7 +359,7 @@ handle_cast({ read_callback, Ref, {error, _Err}}, State) ->
     % Select new storage
     StorageUrls = get_storages(Ref, State),
     FromPid = get_caller(Ref, State),
-    case choose_storage(StorageUrls) of
+    case select_read_storage(StorageUrls) of
         #storage{url = Url, pid = Pid} ->
             ChunkId = get_chunkid(Ref, State),
             TRef = read_with_timer(Pid, ChunkId, FromPid, Ref),
@@ -396,7 +394,7 @@ handle_cast({ write_callback, Ref, {error, _Err}}, State) ->
     % Select new storage
     StorageUrls = get_storages(Ref, State),
     FromPid = get_caller(Ref, State),
-    case choose_storage(StorageUrls) of
+    case select_write_storage(StorageUrls) of
         #storage{url = Url, pid = Pid} ->
             ChunkId = get_chunkid(Ref, State),
             Data = get_data(Ref, State),
@@ -619,14 +617,8 @@ write_with_timer(Pid, ChunkId, Data, FromPid, Ref) ->
                                      {error, timeout}}]),
     TRef.
 
-%%--------------------------------------------------------------------
-%% @doc
-%% Adds the Storage (URL) in the list of storages for each chunk in Chunklist
-%%
-%% @spec add_storage_to_chunks(AllChunks, ChunksInThisStore, Storage) -> list()
-%% @end
-%%--------------------------------------------------------------------
 
+%% Adds the Storage (URL) to the list of storages for each chunk 
 add_storage_to_chunks([], _StorageUrl) ->
     [];
 add_storage_to_chunks([ChunkId | R], StorageUrl) ->
@@ -644,8 +636,20 @@ add_storage_to_chunks([ChunkId | R], StorageUrl) ->
     end,
     add_storage_to_chunks(R, StorageUrl).
 
-remove_storage_from_chunks([], _StorageUrl) ->
-    [];
+%% Remove the Storage (URL) to the list of storages for each chunk 
+%% Right now storages refrech with a fill list so first cases will not be used
+%% remove_storage_from_chunks([], _StorageUrl) ->
+%%    [];
+%% remove_storage_from_chunks([ChunkId | R], StorageUrl) ->
+%%     case ets:lookup(chunks, ChunkId) of
+%%         [#chunk{storages = S}] ->
+%%             Storages = lists:delete(StorageUrl, S),
+%%             ets:update_element(chunks, ChunkId,
+%%                                {#chunk.storages, Storages});
+%%         [] ->
+%%             ok
+%%     end,
+%%     remove_storage_from_chunks(R, StorageUrl);
 remove_storage_from_chunks(all, StorageUrl) ->
     Chunks = ets:tab2list(chunks),
     lists:map(
@@ -658,30 +662,22 @@ remove_storage_from_chunks(all, StorageUrl) ->
                   false ->
                        ok
               end
-      end, Chunks);
-remove_storage_from_chunks([ChunkId | R], StorageUrl) ->
-    case ets:lookup(chunks, ChunkId) of
-        [#chunk{storages = S}] ->
-            Storages = lists:delete(StorageUrl, S),
-            ets:update_element(chunks, ChunkId,
-                               {#chunk.storages, Storages});
-        [] ->
-            ok
-    end,
-    remove_storage_from_chunks(R, StorageUrl).
+      end, Chunks).
 
-choose_storage([]) ->
+%% Selects a read storage to use
+select_read_storage([]) ->
     not_found;
-choose_storage([StorageUrl | Rest]) ->
+select_read_storage([StorageUrl | Rest]) ->
     case ets:lookup(storages, StorageUrl) of
         [S = #storage{}] -> S;
         [] ->
             % Storage not connected
-            choose_storage(Rest)
+            select_read_storage(Rest)
     end.
 
-choose_write_storage([]) -> no_storage;
-choose_write_storage(Storages) ->
+%% Selects a write stroage to use
+select_write_storage([]) -> no_storage;
+select_write_storage(Storages) ->
     lists:nth(random:uniform(length(Storages)), Storages).
 
 connected_storages() ->

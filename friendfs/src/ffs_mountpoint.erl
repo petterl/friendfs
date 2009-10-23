@@ -12,6 +12,7 @@
 
 -include_lib("fuserl/include/fuserl.hrl").
 -include_lib("friendfs/include/friendfs.hrl").
+-include_lib("friendfs/include/debug.hrl").
 -include_lib("kernel/include/file.hrl").
 
 %-behaviour(fuserlsrv).

@@ -528,12 +528,12 @@ read(Tid,InodeI,Length,Offset) ->
     Inode = lookup(Tid,InodeI),
 	read_chunks(Inode#ffs_inode.chunks,0,Offset,Length).
 
-read_chunks([],CurrSize,Offset,Length) ->
+read_chunks([],CurrSize,Offset,_Length) ->
 	{Offset - CurrSize,[]};
 read_chunks([#ffs_chunk{ size = Size } = Chunk|T], CurrSize, Offset, Length) 
 		when (Size + CurrSize) > Offset ->
 	{Offset-CurrSize, read_data(T,Size - (Offset-CurrSize),[Chunk],Length)};
-read_chunks([#ffs_chunk{ size = Size } = Chunk|T], CurrSize, Offset, Length) ->
+read_chunks([#ffs_chunk{ size = Size } = _Chunk|T], CurrSize, Offset, Length) ->
 	read_chunks(T, CurrSize+Size, Offset, Length).
 
 %% If we have read all chunks
@@ -551,18 +551,3 @@ read_data([#ffs_chunk{ size = Size } = Chunk|T], CurrLength, Acc, Length) ->
 %% Internal functions
 %%====================================================================
 	
-get_path_to_inode(Tid,Inode) ->
-    get_path_to_inode(Tid,Inode,"").
-get_path_to_inode(_Tid,1,Path) ->
-    lists:flatten(["/"|Path]);
-get_path_to_inode(Tid,Inode,Acc) ->
-    ParentInode = find(Tid,Inode,".."),
-    Links = ets:match_object(Tid#ffs_tid.link,
-			     #ffs_link{ from = ParentInode, 
-					to = Inode, _ = '_' }),
-    get_path_to_inode(Tid,ParentInode,[(hd(Links))#ffs_link.name,"/"|Acc]).
-
-path_parse(encrypt,Path,#ffs_inode{ mode = M },[]) when ((M band ?D) =:= 0) ->
-    re:replace(Path,"/","-",[global,{return,list}])++"?file.ffs";
-path_parse(encrypt,Path,#ffs_inode{ },[]) ->
-    re:replace(Path,"/","-",[global,{return,list}])++"?dir.ffs".
