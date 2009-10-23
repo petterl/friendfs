@@ -175,9 +175,6 @@ scan_config_str([Char|T],Line) when Char == $\t; Char == $ ->
 scan_config_str([Char|T],Line) when Char > $A, Char < $Z ->
 	{Key,Tail} = read_until_chars([Char|T],?DELIMS),
 	[{key,Line,Key}|scan_config_str(Tail,Line)];
-scan_config_str([$",Char|T],Line) when Char > $A, Char > $Z ->
-	{Key,[_|Tail]} = read_until_chars([Char|T],[$"]),
-	[{key,Line,Key}|scan_config_str(Tail,Line)];
 scan_config_str([$",Char|T],Line) ->
 	{Value,[_|Tail]} = read_until_chars([Char|T],[$"]),
 	[{value,Line,Value}|scan_config_str(Tail,Line)];	
