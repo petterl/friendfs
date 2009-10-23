@@ -45,23 +45,23 @@ connect_storage(Mod, Args) ->
 %%
 %%--------------------------------------------------------------------
 init(_Args) ->
-    Specs = get_storages(ffs_config:get_filesystems(),[]),
+    Specs = get_storages(ffs_config:get_storages(),[]),
     {ok, {{one_for_one, 10, 10},Specs}}.
 
 
-get_storages([{{"Filesystem",Name},Args}|T],Acc) ->
-	NewAcc = get_storages(list_to_atom(Name),Args,Acc),
+get_storages([{{"Storage",Name},Args}|T],Acc) ->
+	NewAcc = get_storages(list_to_atom(Name),Args,Args,Acc),
 	get_storages(T,NewAcc);
 get_storages([],Acc) ->
 	Acc.
-get_storages(FSName,[{"Storage",Url}|T],Acc) ->
+
+get_storages(Name,[{"Url",Url}|T],Config,Acc) ->
 	Module = get_storage_mod(Url),
-	Config = [],
-	get_storages(FSName,T,[{{Url, Config}, {Module,start_link,[Url, Config]},
+	get_storages(Name,T,Config,[{{Url, Config},{Module,start_link,[Url,Config]},
         	permanent, 10000, worker, [Module]} | Acc]);
-get_storages(FSName,[_|T],Acc) ->
-	get_storages(FSName,T,Acc);
-get_storages(_FSName,[],Acc) ->
+get_storages(Name,[_|T],Config,Acc) ->
+	get_storages(Name,T,Config,Acc);
+get_storages(_Name,[],_Config,Acc) ->
 	Acc.
 
 get_storage_mod(Url) ->

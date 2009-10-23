@@ -6,7 +6,8 @@
 %%%-------------------------------------------------------------------
 -module(ffs_config).
 
--export([init/0, parse_config/1, read/1, get_filesystems/0, write/2]).
+-export([init/0, parse_config/1, read/1, write/2]).
+-export([get_filesystems/0, get_storages/0]).
 
 init() ->
     ets:new(ffs_config, [public,named_table]),
@@ -33,6 +34,9 @@ read(Key) ->
 
 get_filesystems() ->
     ets:match_object(ffs_config, {{"Filesystem", '_'}, '_'}).
+
+get_storages() ->
+    ets:match_object(ffs_config, {{"Storage", '_'}, '_'}).
 
 write(Key, Value) ->
     ets:insert(ffs_config, {Key, Value}).

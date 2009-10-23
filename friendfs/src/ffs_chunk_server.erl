@@ -16,6 +16,7 @@
 
 -behaviour(gen_server).
 -include("friendfs.hrl").
+-include("chunk_server.hrl").
 -include("debug.hrl").
 
 %% API
@@ -23,8 +24,8 @@
 
 %% Storage API
 -export([read/1, write/2, delete/1, delete/2]).
--export([update_storage/3]).
--export([register_chunk/3, info/0]).
+-export([connected_storages/0, update_storage/3]).
+-export([register_chunk/3, info/0, replication_level/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -43,7 +44,8 @@
                   storage,
                   remaining_storages = [],
                   data,
-                  timer_ref}).
+                  timer_ref,
+                  start_time}).
 
 -ifdef(TEST).
 -include("ffs_chunk_server.hrl").
@@ -61,10 +63,6 @@
 %% @end
 %% @type storage_url() = string().
 %%     The url that this storage is connected to.
-%% @end
-%% @type action() = tuple().
-%%     An action for the replication system
-%%     {copy, StorageUrl, Chunk, TargetStorageUrl}
 %% @end
 
 
@@ -114,7 +112,7 @@ read(ChunkId) ->
 %%     Reason = no_storage_avail | atom()
 %% @end
 %%--------------------------------------------------------------------
-write(Data, Ratio) ->
+write(Data, Ratio) when is_binary(Data)->
     gen_server:call(?SERVER, {write, Ratio, Data}, infinity).
 
 
@@ -122,7 +120,9 @@ write(Data, Ratio) ->
 %% @doc
 %% Delete a chunk from all storages
 %%
-%% It actuallt decrements the ref count on the chunk. If ref count is 0 it will be %% deleted by the chunk replicator when possible.
+%% It actuallt decrements the ref count on the chunk.
+%% If ref count is 0 it will be
+%% deleted by the chunk replicator when possible.
 %%
 %% @spec
 %%   delete(chunk_id()) -> ok | {error, not_found}
@@ -158,6 +158,17 @@ update_storage(Url, Pid, ChunkIds) ->
 
 %%--------------------------------------------------------------------
 %% @doc
+%% Gives a list of all storages that are currently connected
+%%
+%% @spec
+%%   connected_storages() -> [storage_url()]
+%% @end
+%%--------------------------------------------------------------------
+connected_storages() ->
+    [ S#storage.url || S <- ets:tab2list(storages)].
+
+%%--------------------------------------------------------------------
+%% @doc
 %% Register ratio for a chunk in filesystem
 %%
 %% @spec
@@ -168,6 +179,13 @@ update_storage(Url, Pid, ChunkIds) ->
 %%--------------------------------------------------------------------
 register_chunk(FsName, ChunkId, Ratio) ->
     gen_server:call(?SERVER, {register_chunk, ChunkId, Ratio, FsName}).
+
+replication_level(ChunkId) ->
+    case ets:lookup(chunks, ChunkId) of
+        [#chunk{storages = S}] ->
+            length(S);
+        [] -> {error, not_found}
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -218,16 +236,16 @@ init(_Config) ->
 handle_call({ read, ChunkId}, From, State) ->
     %% Find Chunk information from ChunkId
     case ets:lookup(chunks, ChunkId) of
-        [#chunk{storages = StorageUrls}] ->
+        [#chunk{storages = StoragePids}] ->
 	    %% Get the prefered storage to fetch from
-            case select_read_storage(StorageUrls) of
-                #storage{url = Url, pid = Pid}->
+            case select_read_storage(StoragePids) of
+                #storage{pid = Pid}->
                     Ref = make_ref(),
                     TRef = read_with_timer(Pid, ChunkId, From, Ref),
 		    %% Update session with new timer and fewer urls
-                    StorageUrls2 = StorageUrls -- [Url],
-                    State2 = save_session(Ref, ChunkId, [], From, Url,
-                                          StorageUrls2, TRef, State),
+                    StoragePids2 = StoragePids -- [Pid],
+                    State2 = save_session(Ref, ChunkId, [], From, Pid,
+                                          StoragePids2, TRef, State),
                     {noreply, State2};
                 not_found ->
                     {reply, {error, enoent}, State}
@@ -241,18 +259,18 @@ handle_call({ write, Ratio, Data}, From, State) ->
     ChunkId = ffs_lib:get_chunkid(Data),
     %% Find Chunk from ChunkId
     case ets:lookup(chunks, ChunkId) of
-        [#chunk{storages=StorageUrls, ratio=Ratio0}]
+        [#chunk{storages=StoragePids, ratio=Ratio0}]
         when Ratio == -1,
-        Ratio0 =< length(StorageUrls) ->
+        Ratio0 =< length(StoragePids) ->
             %% Replication call, but enough storages
             {reply, {error, not_needed}, State};
-        [#chunk{storages=StorageUrls}]
+        [#chunk{storages=StoragePids}]
         when Ratio == -1 ->
             % We already have chunk, this is a replication call
-            AllStorages = connected_storages(),
+            AllStorages = connected_storages_int(),
             case select_write_storage(lists:filter(
-                   fun(#storage{url=Url}) ->
-                           not lists:member(Url, StorageUrls)
+                   fun(#storage{pid=Pid}) ->
+                           not lists:member(Pid, StoragePids)
                    end, AllStorages)) of
                 no_storage ->
                     % Replication requested but not possible
@@ -264,9 +282,9 @@ handle_call({ write, Ratio, Data}, From, State) ->
                     Ref = make_ref(),
                     TRef = write_with_timer(Pid, ChunkId, Data, From, Ref),
 		            %% Update session with new timer and fewer urls
-                    StorageUrls2 = StorageUrls -- [Url],
-                    State2 = save_session(Ref, ChunkId, Data, From, Url,
-                                          StorageUrls2, TRef, State),
+                    StoragePids2 = StoragePids -- [Pid],
+                    State2 = save_session(Ref, ChunkId, Data, From, Pid,
+                                          StoragePids2, TRef, State),
                     {noreply, State2}
             end;
         [#chunk{ref_cnt=RefCnt, ratio=Ratio0}] ->
@@ -277,17 +295,17 @@ handle_call({ write, Ratio, Data}, From, State) ->
                                 {#chunk.ratio, erlang:max(Ratio0, Ratio)}]),
             {reply, {ok, ChunkId}, State};
         [] -> 
-            StorageUrls = connected_storages(),
+            StoragePids = connected_storages_int(),
             % Select best server to store on
-            case select_write_storage(StorageUrls) of
-                #storage{url = Url, pid = Pid} ->
+            case select_write_storage(StoragePids) of
+                #storage{pid = Pid} ->
  		            %% store on one server
                     Ref = make_ref(),
                     TRef = write_with_timer(Pid, ChunkId, Data, From, Ref),
 		            %% Update session with new timer and fewer urls
-                    StorageUrls2 = StorageUrls -- [Url],
-                    State2 = save_session(Ref, ChunkId, Data, From, Url,
-                                          StorageUrls2, TRef, State),
+                    StoragePids2 = StoragePids -- [Pid],
+                    State2 = save_session(Ref, ChunkId, Data, From, Pid,
+                                          StoragePids2, TRef, State),
 		    ets:insert(chunks, #chunk{id=ChunkId, 
 					      ratio=Ratio,
 					      ref_cnt=1,
@@ -321,16 +339,17 @@ handle_call({ register_chunk, ChunkId, Ratio, _FsName}, _From, State) ->
             ets:update_element(chunks, ChunkId, [{#chunk.ratio, Ratio},
                                                  {#chunk.ref_cnt, RefCnt+1}]);
 	    [] ->
-		ets:insert(chunks, #chunk{id=ChunkId, ratio=Ratio,
-					  ref_cnt = 1})
+            ets:insert(chunks, #chunk{id=ChunkId, ratio=Ratio,
+                                      ref_cnt = 1})
 	end,
+    ffs_chunk_replicator:refresh(),
     {reply, Res, State};
 
 handle_call( info, _From, State) ->
-    S = ets:tab2list(storages),
-    C = ets:tab2list(chunks),
-    io:format("Storages:~n~p~nChunks:~n~p~nSessions:~n~p~n",
-              [S, C, State#state.sessions]),
+    io:format("Storages:~n", []),
+    [io:format("~p ~s~n", [S#storage.pid, S#storage.url]) || S <- ets:tab2list(storages)],
+    io:format("~nChunks: (id on storages:ref/ratio)~n", []),
+    [io:format("~s on ~p:~p/~p~n", [C#chunk.id, C#chunk.storages, C#chunk.ref_cnt, C#chunk.ratio]) || C <- ets:tab2list(chunks)],
     {reply, ok, State};
 
 handle_call(_Request, _From, State) ->
@@ -347,9 +366,10 @@ handle_call(_Request, _From, State) ->
 %% {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({ read_callback, Ref, ok}, State) ->
+handle_cast({ read_callback, Ref, {ok, Speed}}, State) ->
     % Stop timer
     stop_timer(Ref, State),
+    ?DBG("Read with ~pb/s", [Speed]),
     {noreply, remove_session(Ref, State)};
 
 handle_cast({ read_callback, Ref, {error, _Err}}, State) ->
@@ -357,17 +377,17 @@ handle_cast({ read_callback, Ref, {error, _Err}}, State) ->
     stop_timer(Ref, State),
 
     % Select new storage
-    StorageUrls = get_storages(Ref, State),
+    StoragePids = get_storages(Ref, State),
     FromPid = get_caller(Ref, State),
-    case select_read_storage(StorageUrls) of
-        #storage{url = Url, pid = Pid} ->
+    case select_read_storage(StoragePids) of
+        #storage{pid = Pid} ->
             ChunkId = get_chunkid(Ref, State),
             TRef = read_with_timer(Pid, ChunkId, FromPid, Ref),
 
             % Update session with new timer and fewer urls
-            StorageUrls2 = StorageUrls -- [Url],
-            State2 = save_session(Ref, ChunkId, [], FromPid, Url,
-                                  StorageUrls2, TRef, State),
+            StoragePids2 = StoragePids -- [Pid],
+            State2 = save_session(Ref, ChunkId, [], FromPid, Pid,
+                                  StoragePids2, TRef, State),
 
             {noreply, State2};
         not_found ->
@@ -376,14 +396,15 @@ handle_cast({ read_callback, Ref, {error, _Err}}, State) ->
             State1 = remove_session(Ref, State),
             {noreply, State1}
     end;
-
-handle_cast({ write_callback, Ref, ok}, State) ->
+ 
+handle_cast({ write_callback, Ref, {ok, Speed}}, State) ->
     % Stop timer
     stop_timer(Ref, State),
+    ?DBG("Write: ~pb/s", [Speed]),
     ChunkId = get_chunkid(Ref, State),
-    Url = get_storage(Ref, State),
+    Pid = get_storage(Ref, State),
     ets:update_element(chunks, ChunkId,
-		       {#chunk.storages, [Url]}),
+		       {#chunk.storages, [Pid]}),
     ffs_chunk_replicator:refresh(),
     {noreply, remove_session(Ref, State)};
 
@@ -401,7 +422,7 @@ handle_cast({ write_callback, Ref, {error, _Err}}, State) ->
             TRef = write_with_timer(Pid, ChunkId, Data, FromPid, Ref),
             % Update session with new timer and fewer urls
             StorageUrls2 = StorageUrls -- [Url],
-            State2 = save_session(Ref, ChunkId, Data, FromPid, Url,
+            State2 = save_session(Ref, ChunkId, Data, FromPid, Pid,
                                   StorageUrls2, TRef, State),
             {noreply, State2};
         not_found ->
@@ -414,7 +435,7 @@ handle_cast({ write_callback, Ref, {error, _Err}}, State) ->
 handle_cast({ delete, ChunkId, StorageUrl}, State) ->
     case ets:lookup(chunks, ChunkId) of
         [#chunk{storages = StorageUrls}] ->
-            case ets:lookup(storages, StorageUrl) of
+            case get_storage(StorageUrl, State) of
                 [S = #storage{}] ->
                     gen_server:cast(S#storage.pid, {delete, ChunkId}),
                     ets:update_element(chunks, ChunkId,
@@ -435,26 +456,26 @@ handle_cast({update_storage, From, Url, ChunkIds}, State) ->
         [#storage{}] ->
             Updated =
                 ets:foldl(
-                  fun(#chunk{id = ChunkId, storages=StorageUrls}, Acc) ->
+                  fun(#chunk{id = ChunkId, storages=StoragePids}, Acc) ->
                           case lists:member(ChunkId, ChunkIds) of
                               true ->
                                   % Chunk in this storage
-                                  case lists:member(Url, StorageUrls) of
+                                  case lists:member(From, StoragePids) of
                                       true ->
                                           Acc;
                                       false ->
                                           % Added
                                           ets:update_element(chunks, ChunkId,
-                                                             {#chunk.storages, StorageUrls ++ [Url]}),
+                                                             {#chunk.storages, StoragePids ++ [From]}),
                                           true
                                   end;
                               false ->
                                   % chunk not in storage
-                                  case lists:member(Url, StorageUrls) of
+                                  case lists:member(From, StoragePids) of
                                       true ->
                                           % Removed
                                           ets:update_element(chunks, ChunkId,
-                                                             {#chunk.storages, StorageUrls -- [Url]}),
+                                                             {#chunk.storages, StoragePids -- [From]}),
                                           true;
                                       false ->
                                           Acc
@@ -477,7 +498,7 @@ handle_cast({update_storage, From, Url, ChunkIds}, State) ->
             % Add storage information to list of connect storages
             ets:insert(storages, #storage{url = Url, pid = From, ref = Ref}),
             % Update handled chunks
-            add_storage_to_chunks(ChunkIds, Url)
+            add_storage_to_chunks(ChunkIds, From)
     end,
     {noreply, State};
 
@@ -532,20 +553,20 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%==================================================================
 
-save_session(Ref, ChunkId, Data, From, Url, StorageUrls, Tref,
+save_session(Ref, ChunkId, Data, From, Pid, StorageUrls, Tref,
              #state{sessions = Sessions0} = State) ->
     case lists:keysearch(Ref, #session.ref, Sessions0) of
         {value, #session{} = S} ->
             Sessions = lists:keyreplace(Ref, #session.ref, Sessions0,
-                                        S#session{storage = Url,
+                                        S#session{storage = Pid,
                                                   remaining_storages = StorageUrls,
                                                   timer_ref = Tref});
         _ ->
             Session = #session{ref = Ref,
                                chunk_id = ChunkId,
                                caller_pid = From,
-                               storage = Url,
-			       data = Data,
+                               storage = Pid,
+                               data = Data,
                                remaining_storages = StorageUrls,
                                timer_ref = Tref},
             Sessions = [Session | Sessions0]
@@ -565,7 +586,7 @@ get_chunkid(Ref, #state{sessions = Sessions}) ->
 get_data(Ref, #state{sessions = Sessions}) ->
     case lists:keysearch(Ref, #session.ref, Sessions) of
         {value, #session{data = Data}} -> Data;
-        false -> []
+        false -> <<>>
     end.
  
 get_caller(Ref, #state{sessions = Sessions}) ->
@@ -583,9 +604,10 @@ get_storages(Ref, #state{sessions = Sessions}) ->
 
 get_storage(Ref, #state{sessions = Sessions}) ->
     case lists:keysearch(Ref, #session.ref, Sessions) of
-        {value, #session{storage = Url}} -> Url;
+        {value, #session{storage = Pid}} -> Pid;
         false -> []
     end.
+
 
 stop_timer(Ref, #state{sessions = Sessions}) ->
     case lists:keysearch(Ref, #session.ref, Sessions) of
@@ -667,8 +689,8 @@ remove_storage_from_chunks(all, StorageUrl) ->
 %% Selects a read storage to use
 select_read_storage([]) ->
     not_found;
-select_read_storage([StorageUrl | Rest]) ->
-    case ets:lookup(storages, StorageUrl) of
+select_read_storage([Pid | Rest]) ->
+    case ets:match_object(storages, #storage{pid=Pid, _='_'}) of
         [S = #storage{}] -> S;
         [] ->
             % Storage not connected
@@ -680,6 +702,5 @@ select_write_storage([]) -> no_storage;
 select_write_storage(Storages) ->
     lists:nth(random:uniform(length(Storages)), Storages).
 
-connected_storages() ->
+connected_storages_int() ->
     ets:tab2list(storages).
-

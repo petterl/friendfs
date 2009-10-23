@@ -22,9 +22,10 @@
 -define(REFRESH_INTERVAL, 10000).
 
 -record(state,
-	{url,         % URL in config file
-     path,        % Path of files
-     chunks = []  % Chunks in storage
+	{url,            % URL in config file
+     path,           % Path of files
+     chunks = [],    % Chunks in storage
+     refresh = 10000 % Refresh Interval (10 sec)
 	}).
 
 start_link(Url, Config) ->
@@ -39,13 +40,14 @@ start_link(Url, Config) ->
 %% @doc
 %% Initiates the server
 %%
-%% @spec init(Url) -> {ok, State} |
+%% @spec init(Url, Config) -> {ok, State} |
 %%                    {ok, State, Timeout} |
 %%                    ignore |
 %%                    {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
 init([Url, _Config]) ->
+    ?DBG("Config: ~p", [_Config]),
     {_Scheme, Host, UrlPath, _Query, _Fragment} =
         ffs_lib:split_url(Url),
 	Path = case Host of
@@ -113,6 +115,7 @@ handle_cast({delete, Cid}, State0) ->
     {noreply, State, ?REFRESH_INTERVAL};
 
 handle_cast({read, File, From, Ref}, State) ->
+    StartTime = now(),
     % Read data from file
     case file:read_file(join(State#state.path, File)) of
 	{ok, Data} ->
@@ -121,7 +124,9 @@ handle_cast({read, File, From, Ref}, State) ->
         File ->
             %% Same chunkid matches name
             %% Tell chunkserver that we got the data
-	        gen_server:cast(ffs_chunk_server, {read_callback, Ref, ok}),
+            TimeDiff = timer:now_diff(now(), StartTime)/1000,
+            Speed = size(Data)/TimeDiff,
+	        gen_server:cast(ffs_chunk_server, {read_callback, Ref, {ok, Speed}}),
 	        %% Send it to requesting process
 	        gen_server:reply(From, {ok, Data});
         _Checksum ->
@@ -137,17 +142,17 @@ handle_cast({read, File, From, Ref}, State) ->
     {noreply, State, ?REFRESH_INTERVAL};
 
 handle_cast({write, Cid, Data, From, Ref}, State) ->
-    ?DBG("write start", []),
+    StartTime = now(),
     case file:write_file(join(State#state.path, Cid), Data) of
         ok ->	
-            ?DBG("write ok", []),
             State1 = State#state{chunks = State#state.chunks ++ [Cid]},
+            TimeDiff = timer:now_diff(now(), StartTime)/1000,
+            Speed = size(Data)/TimeDiff,
             % Tell chunkserver that we stored the data
-            gen_server:cast(ffs_chunk_server, {write_callback, Ref, ok}),
+            gen_server:cast(ffs_chunk_server, {write_callback, Ref, {ok, Speed}}),
             % Send it to requesting process
             gen_server:reply(From, {ok, Cid});
         {error, _} = Err ->
-            ?DBG("write fail: ~p~n", [Err]),
             State1 = State,
             % Tell chunkserver that we stored the data
             gen_server:cast(ffs_chunk_server, {write_callback, Ref, Err})

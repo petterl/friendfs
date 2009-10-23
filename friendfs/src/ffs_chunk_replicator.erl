@@ -28,6 +28,7 @@
 
 -behaviour(gen_server).
 -include("friendfs.hrl").
+-include("chunk_server.hrl").
 -include("debug.hrl").
 
 %% API
@@ -169,9 +170,9 @@ create_copy_actions() ->
 
 create_copy_action_tuples([]) ->
     [];
-create_copy_action_tuples([[_ChunkId, _Storages, _Ratio, 0]|R]) ->
-    create_copy_action_tuples(R);
 create_copy_action_tuples([[_ChunkId, _Storages, undefined, _RefCnt]|R]) ->
+    create_copy_action_tuples(R);
+create_copy_action_tuples([[_ChunkId, _Storages, _Ratio, 0]|R]) ->
     create_copy_action_tuples(R);
 create_copy_action_tuples([[_ChunkId, Storages, Ratio, _RefCnt]|R])
   when length(Storages) >= Ratio ->
@@ -181,15 +182,6 @@ create_copy_action_tuples([[ChunkId, Storages, _Ratio, _RefCnt] | R])
     % Needs to be replicated now
     [{copy, ChunkId, infinite} |
      create_copy_action_tuples(R)];
-create_copy_action_tuples([[ChunkId, Storages, infinite, _RefCnt]|R]) ->
-    AllStorages = ets:match(storages, #storage{url='$1', _='_'}),
-    case lists:filter(
-           fun([S]) -> not lists:member(S, Storages) end, AllStorages) of
-        [] -> create_copy_action_tuples(R);
-        Remaining ->
-            [{copy, ChunkId, length(Remaining)} |
-             create_copy_action_tuples(R)]
-    end;
 create_copy_action_tuples([[ChunkId, Storages, Ratio, _RefCnt]|R]) ->
     Prio = Ratio - length(Storages),
     [{copy, ChunkId, Prio} | create_copy_action_tuples(R)].
@@ -268,8 +260,8 @@ action(_A = {copy, ChunkId, _Ratio}) ->
     case ffs_chunk_server:read(ChunkId) of
         {ok, Data} ->
             ffs_chunk_server:write(Data, -1);
-        _ ->
-            {error, {read_error, ChunkId}}
+        Error ->
+            Error
     end;
 
 action(Action) ->

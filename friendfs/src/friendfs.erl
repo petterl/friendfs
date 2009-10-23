@@ -16,6 +16,7 @@
 
 -module (friendfs).
 -behaviour (application).
+-include("debug.hrl").
 -export ([ start/0,
            start/2,
            stop/0,
@@ -60,9 +61,9 @@ start(_Type, _Args) ->
     
     case ffs_config:parse_config(ConfigPath) of
 	ok ->
-	    io:format("Loading configuration\n",[]);
-	_Else ->
-	    io:format("Could not read config file!"),
+	    ?DBG("Loading configuration\n",[]);
+	Err ->
+        ?ERR("Could not read config file!: ~p", [Err]),
 	    exit(1)
     end,
     

@@ -28,7 +28,28 @@ write_test_() ->
         end,
     {"Test writing and reading data", {setup,Setup,Tests}}.
 
-    
+
+replicate_test_() ->
+    Setup =
+        fun() ->
+                crypto:start(),
+                ffs_chunk_server:start(eunit_test),
+                file:make_dir("/tmp/ffs_eunit"),
+                ffs_storage_file:start_link("file:///tmp/ffs_eunit",
+                                            eunit_test),
+                list_to_binary(lists:flatten(io_lib:format("~p",[element(3,now())])))
+        
+        end,
+    Tests =
+        fun(Data) ->
+                io:format("Data: ~p~n", [Data]),
+                {ok, ChunkId} = ffs_chunk_server:write(Data,2),
+                timer:sleep(11000),
+                [?_assertEqual(2,ffs_chunk_server:replication_level(ChunkId))]
+
+        end,
+    {"Test replication", {setup,Setup,Tests}}.
+
  
  
  
