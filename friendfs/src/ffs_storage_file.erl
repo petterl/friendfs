@@ -84,9 +84,8 @@ handle_call(list, _From, State) ->
     {reply, Res, State, ?REFRESH_INTERVAL};
 
 handle_call(refresh, _From, State) ->
-    {ok, Files} = file:list_dir(State#state.path),
-    ffs_chunk_server:update_storage(State#state.url, self(), Files, all),
-    {reply, Files, State, ?REFRESH_INTERVAL};
+    State2 = refresh_storage(State),
+    {reply, ok, State2, ?REFRESH_INTERVAL};
 
 handle_call(info, _From, State) ->
     {reply, State, State, ?REFRESH_INTERVAL}.

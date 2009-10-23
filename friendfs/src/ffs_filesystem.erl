@@ -369,7 +369,8 @@ init(Name) ->
 
 store_chunk(Data,_Config) ->
     io:format("Storing data\n",[]),
-    ffs_chunk_server:write(Data).
+    Ratio = 2,
+    ffs_chunk_server:write(Data,Ratio).
 
 delete_chunk(ChunkId,_Config) ->
 	io:format("Deleting ~p\n",[ChunkId]),

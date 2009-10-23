@@ -318,8 +318,8 @@ handle_call({ register_chunk, ChunkId, Ratio, _FsName}, _From, State) ->
     Res =
 	case ets:lookup(chunks, ChunkId) of
 	    [#chunk{ref_cnt = RefCnt}] ->
-		ets:update_element(chunks, ChunkId, {#chunk.ratio, Ratio,
-						     #chunk.ref_cnt, RefCnt+1});
+            ets:update_element(chunks, ChunkId, [{#chunk.ratio, Ratio},
+                                                 {#chunk.ref_cnt, RefCnt+1}]);
 	    [] ->
 		ets:insert(chunks, #chunk{id=ChunkId, ratio=Ratio,
 					  ref_cnt = 1})
@@ -637,8 +637,19 @@ add_storage_to_chunks([ChunkId | R], StorageUrl) ->
     add_storage_to_chunks(R, StorageUrl).
 
 %% Remove the Storage (URL) to the list of storages for each chunk 
-remove_storage_from_chunks([], _StorageUrl) ->
-    [];
+%% Right now storages refrech with a fill list so first cases will not be used
+%% remove_storage_from_chunks([], _StorageUrl) ->
+%%    [];
+%% remove_storage_from_chunks([ChunkId | R], StorageUrl) ->
+%%     case ets:lookup(chunks, ChunkId) of
+%%         [#chunk{storages = S}] ->
+%%             Storages = lists:delete(StorageUrl, S),
+%%             ets:update_element(chunks, ChunkId,
+%%                                {#chunk.storages, Storages});
+%%         [] ->
+%%             ok
+%%     end,
+%%     remove_storage_from_chunks(R, StorageUrl);
 remove_storage_from_chunks(all, StorageUrl) ->
     Chunks = ets:tab2list(chunks),
     lists:map(
@@ -651,17 +662,7 @@ remove_storage_from_chunks(all, StorageUrl) ->
                   false ->
                        ok
               end
-      end, Chunks);
-remove_storage_from_chunks([ChunkId | R], StorageUrl) ->
-    case ets:lookup(chunks, ChunkId) of
-        [#chunk{storages = S}] ->
-            Storages = lists:delete(StorageUrl, S),
-            ets:update_element(chunks, ChunkId,
-                               {#chunk.storages, Storages});
-        [] ->
-            ok
-    end,
-    remove_storage_from_chunks(R, StorageUrl).
+      end, Chunks).
 
 %% Selects a read storage to use
 select_read_storage([]) ->

@@ -68,7 +68,7 @@ setup_release: erts-$(ERTS_VSN) setup_libs releases/$(REL_VSN) releases/$(REL_VS
 
 ## SUB TARGETS
 
-lib/friendfs.plt: lib/otp.plt
+lib/friendfs.plt: lib/otp.plt compile
 	dialyzer --plt lib/otp.plt --add_to_plt --output_plt lib/friendfs.plt -c lib/friendfs-$(FRIENDFS_VSN)/ebin
 
 lib/otp.plt: friendfs.rel
