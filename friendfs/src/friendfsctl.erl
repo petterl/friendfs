@@ -14,7 +14,7 @@
 %%% Created : 10 Aug 2009 by Petter Sandholdt <petter@sandholdt.se>
 %%%-------------------------------------------------------------------
 
--module (friendfs).
+-module (friendfsctl).
 -behaviour (application).
 -include("debug.hrl").
 -export ([ start/0,

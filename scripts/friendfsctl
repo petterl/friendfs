@@ -1,6 +1,5 @@
 #!/bin/bash 
 
-ERL_COOKIE=friendfs
 ERL_SNAME=friendfs
 ERL_CALL=erl_call
 ROOTDIR=`cd $(dirname $0)/..;pwd`
@@ -19,7 +18,7 @@ function check_config() {
 
 function check_running() {
     # Check if friendfs daemon is running
-    $ERL_CALL -c $ERL_COOKIE -sname $ERL_SNAME -a "ok" 2>/dev/null 1>&2
+    $ERL_CALL -sname $ERL_SNAME -a "ok" 2>/dev/null 1>&2
     return $?
 }
 
@@ -55,14 +54,14 @@ function start() {
         exit 1
     fi
     START_ERL_DATA=${1:-$RELDIR/start_erl.data}
-    $ROOTDIR/bin/run_erl -daemon $ROOTDIR/pipes/ $ROOTDIR/log "exec $ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $START_ERL_DATA -pa $ROOTDIR/patches/ -sname friendfs -setcookie friendfs -friendfs config_path '\"$FRIENDFS_CONF\"' " 
+    $ROOTDIR/bin/run_erl -daemon $ROOTDIR/pipes/ $ROOTDIR/log "exec $ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $START_ERL_DATA -pa $ROOTDIR/patches/ -sname friendfs -friendfs config_path '\"$FRIENDFS_CONF\"' " 
     # TODO: check that it started
     echo "done"
 }
 
 function stop() {
     if check_running; then
-        $ERL_CALL -c $ERL_COOKIE -sname $ERL_SNAME -a "init stop []" >/dev/null
+        $ERL_CALL -sname $ERL_SNAME -a "init stop []" >/dev/null
         echo "Stopped"
         exit 0
     fi
@@ -77,7 +76,7 @@ function restart() {
 
 function status() {
     if check_running; then
-        $ERL_CALL -c $ERL_COOKIE -sname $ERL_SNAME -a "friendfsctrl status []" 
+        $ERL_CALL  -sname $ERL_SNAME -a "friendfsctrl status []" 
         exit 0
     fi
     echo "Not running"

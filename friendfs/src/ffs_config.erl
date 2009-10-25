@@ -7,7 +7,7 @@
 -module(ffs_config).
 
 -export([init/0, parse_config/1, read/1, write/2]).
--export([get_filesystems/0, get_storages/0]).
+-export([get_filesystems/0, get_storages/0, get_secret/0]).
 
 init() ->
     ets:new(ffs_config, [public,named_table]),
@@ -20,8 +20,12 @@ parse_config(ConfigFile) ->
 				  write(Key, Value);
 			     ({Key1, Key2, Value}) ->
 				  write({Key1, Key2}, Value)
-			  end, Config);
-	Error -> Error
+			  end, Config),
+	    ok;
+	{error, Errors} -> 
+	    %% io:format(" ** Failed to parse config: ~n~p~n~n", [Errors]),
+	    %% [io:format("~p",[A]) || {_,_,A} <- Errors],
+	    {error, Errors}
     end.
 
 read(Key) ->
@@ -37,6 +41,12 @@ get_filesystems() ->
 
 get_storages() ->
     ets:match_object(ffs_config, {{"Storage", '_'}, '_'}).
+
+get_secret() ->
+    case ets:match(ffs_config, {"Secret", '$1'}) of
+	[[Secret]] -> Secret;
+	[] -> not_found
+    end.
 
 write(Key, Value) ->
     ets:insert(ffs_config, {Key, Value}).

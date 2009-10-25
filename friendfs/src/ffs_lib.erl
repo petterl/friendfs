@@ -120,7 +120,7 @@ parse_config(Path) ->
 	{ok,Bin} -> 
 	    Scan = scan_config_str(binary_to_list(Bin),1),
 	    ffs_config_parse:parse(Scan);
-	Error -> {error,?MODULE,parse_config,Error}
+	Error -> {error,config_file_missing}
     end.
 	
 parse_defaults(Path) ->
