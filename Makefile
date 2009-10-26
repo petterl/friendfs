@@ -68,11 +68,13 @@ setup_release: erts-$(ERTS_VSN) setup_libs releases/$(REL_VSN) releases/$(REL_VS
 
 ## SUB TARGETS
 
-lib/friendfs.plt: lib/otp.plt compile
-	dialyzer --plt lib/otp.plt --add_to_plt --output_plt lib/friendfs.plt -c lib/friendfs-$(FRIENDFS_VSN)/ebin
+lib/friendfs.plt: lib/otp.plt
+	@echo "Building $@"
+	@dialyzer --quiet --plt lib/otp.plt --add_to_plt --output_plt lib/friendfs.plt -c lib/friendfs-$(FRIENDFS_VSN)/ebin
 
 lib/otp.plt: friendfs.rel
-	dialyzer --build_plt --output_plt lib/otp.plt -r $(APP_VSNS:%=lib/%)
+	@echo "Building $@"
+	@dialyzer --build_plt --output_plt lib/otp.plt -r $(APP_VSNS:%=lib/%)
 
 %.rel: %.relSrc
 	@echo "Updating $@"
