@@ -150,7 +150,7 @@ delete(ChunkId, StorageUrl) ->
 %%   Used by storages to update their status
 %%
 %% @spec
-%%   update_storage(storage_url(), pid(), [chunk_id()], [chunk_id()]) -> ok
+%%   update_storage(storage_url(), pid(), [chunk_id()]) -> ok
 %% @end
 %%--------------------------------------------------------------------
 update_storage(Url, Pid, ChunkIds) ->

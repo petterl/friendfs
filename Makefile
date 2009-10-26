@@ -59,8 +59,9 @@ clean_docs:
 	rm -rf docs
 
 docs: compile
+	@echo " * Generating docs"
 	-@mkdir -p docs
-	$(ERL) $(foreach dir,$(DIRS:%/src=%/ebin),-pa $(dir) ) -noshell -eval "edoc:application($(APPNAME),[{dir,\"docs\"}])" -s init stop
+	@$(ERL) $(foreach dir,$(DIRS:%/src=%/ebin),-pa $(dir) ) -noshell -eval "edoc:application($(APPNAME),[{dir,\"docs\"}])" -s init stop
 	(cd $(APPNAME)/doc/ && make)
 	cp $(APPNAME)/doc/*.png docs/
 
@@ -69,15 +70,15 @@ setup_release: erts-$(ERTS_VSN) setup_libs releases/$(REL_VSN) releases/$(REL_VS
 ## SUB TARGETS
 
 lib/friendfs.plt: lib/otp.plt
-	@echo "Building $@"
+	@echo " * Building $@"
 	@dialyzer --quiet --plt lib/otp.plt --add_to_plt --output_plt lib/friendfs.plt -c lib/friendfs-$(FRIENDFS_VSN)/ebin
 
 lib/otp.plt: friendfs.rel
-	@echo "Building $@"
+	@echo " * Building $@"
 	@dialyzer --build_plt --output_plt lib/otp.plt -r $(APP_VSNS:%=lib/%)
 
 %.rel: %.relSrc
-	@echo "Updating $@"
+	@echo " * Updating $@"
 	cat $< | sed -e 's/"friendfs",""/"friendfs","$(REL_VSN)"/g' \
 		-e 's/friendfs,""/friendfs,"$(FRIENDFS_VSN)"/g' \
 		-e 's/erts,""/erts,"$(ERTS_VSN)"/g' \

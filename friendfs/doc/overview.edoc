@@ -8,5 +8,4 @@
 @doc Friendfs is a filesystem which allows you to automatically
 backup your data at friends servers.
 
-
-@link design.html
+<img src="read_sequence_chunk.png"/>

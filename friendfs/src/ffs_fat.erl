@@ -501,7 +501,7 @@ write_cache(Tid,InodeI,Cache) ->
 %% Description
 %%
 %% @spec
-%%   flush_cache(Tid,InodeI,ChunkIds,Size) -> ok | enoent
+%%   flush_cache(Tid,InodeI,Chunk) -> ok | enoent
 %%      Tid = ffs_tid()
 %%      InodeI = inodei()
 %% @end

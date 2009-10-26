@@ -107,7 +107,7 @@ update_inode(Tid,InodeI,ChunkPos,ChunkId,Size) ->
 %% Description
 %%
 %% @spec
-%%   write_cache(Tid,InodeI,NewData,Offset) -> [{chunk,ChunkId,Data}] | more
+%%   write_cache(Tid,InodeI,NewData,Offset,Config) -> [{chunk,ChunkId,Data}] | more
 %%      Tid = ffs_tid()
 %%      InodeI = inodei()
 %%      NewData = binary()
@@ -262,7 +262,7 @@ delete(FsName, ParentI,Name) ->
 %% Create a new directory at the given path
 %%
 %% @spec
-%%   make_dir(Name,Path) -> ok | {error, Error}
+%%   make_dir(FsName, ParentInodeI, Name, Mode) -> ok | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
 make_dir(FsName, ParentInodeI, Name, Mode) ->

@@ -29,7 +29,7 @@
 	}).
 
 start_link(Url, Config) ->
-	gen_server:start_link(?MODULE,[Url, Config],[]).
+	gen_server:start_link(?MODULE,{Url, Config},[]).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -40,13 +40,13 @@ start_link(Url, Config) ->
 %% @doc
 %% Initiates the server
 %%
-%% @spec init(Url, Config) -> {ok, State} |
+%% @spec init({Url, Config}) -> {ok, State} |
 %%                    {ok, State, Timeout} |
 %%                    ignore |
 %%                    {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([Url, _Config]) ->
+init({Url, _Config}) ->
     ?DBG("Config: ~p", [_Config]),
     {_Scheme, Host, UrlPath, _Query, _Fragment} =
         ffs_lib:split_url(Url),
