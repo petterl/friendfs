@@ -22,20 +22,15 @@ init(Args) ->
 	        {ffs_chunk_server, start, [Args]},
 	        permanent, 10000, worker, [ffs_chunk_server]},
 
-    ChunkReplicator =
-        {ffs_chunk_replicator,
-	        {ffs_chunk_replicator, start, [Args]},
-	        permanent, 10000, worker, [ffs_chunk_replicator]},
-
     Storage =
         {ffs_storage_sup,
 	        {ffs_storage_sup, start_link, [Args]},
 	        permanent, 10000, supervisor, [ffs_storage_sup]},
 
     Mountpoint =
-	{ffs_mountpoint_sup,
-	 {ffs_mountpoint_sup, start_link, []},
-	 permanent, 10000, supervisor, [ffs_mountpoint_sup]},
+        {ffs_mountpoint_sup,
+         {ffs_mountpoint_sup, start_link, []},
+         permanent, 10000, supervisor, [ffs_mountpoint_sup]},
     
     {ok, {{one_for_one, 3, 10},
-	    [ChunkServer,Storage,Mountpoint,ChunkReplicator]}}.
+          [ChunkServer,Storage,Mountpoint]}}.

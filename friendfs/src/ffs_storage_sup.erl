@@ -57,8 +57,8 @@ get_storages([],Acc) ->
 
 get_storages(Name,[{"Url",Url}|T],Config,Acc) ->
 	Module = get_storage_mod(Url),
-	get_storages(Name,T,Config,[{{Url, Config},{Module,start_link,[Url,Config]},
-        	permanent, 10000, worker, [Module]} | Acc]);
+	get_storages(Name,T,Config,[{{list_to_atom(Url), Config},{Module,start_link,[Name,Url,Config]},
+                                 permanent, 10000, worker, [Module]} | Acc]);
 get_storages(Name,[_|T],Config,Acc) ->
 	get_storages(Name,T,Config,Acc);
 get_storages(_Name,[],_Config,Acc) ->

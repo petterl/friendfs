@@ -12,7 +12,7 @@
 -include_lib("kernel/include/file.hrl").
 -include("debug.hrl").
 
--export([start_link/2]).
+-export([start_link/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -24,12 +24,13 @@
 -record(state,
 	{url,            % URL in config file
      path,           % Path of files
-     chunks = [],    % Chunks in storage
-     refresh = 10000 % Refresh Interval (10 sec)
+     name,           % Configured name of storage
+     priority,       % Configured priority of storage
+     chunks = []     % Chunks in storage
 	}).
 
-start_link(Url, Config) ->
-	gen_server:start_link(?MODULE,{Url, Config},[]).
+start_link(Name, Url, Config) ->
+	gen_server:start_link({local, list_to_atom(Url)},?MODULE,{Name, Url, Config},[]).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -40,14 +41,13 @@ start_link(Url, Config) ->
 %% @doc
 %% Initiates the server
 %%
-%% @spec init({Url, Config}) -> {ok, State} |
+%% @spec init({Name, Url, Config}) -> {ok, State} |
 %%                    {ok, State, Timeout} |
 %%                    ignore |
 %%                    {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init({Url, _Config}) ->
-    ?DBG("Config: ~p", [_Config]),
+init({Name, Url, Config}) ->
     {_Scheme, Host, UrlPath, _Query, _Fragment} =
         ffs_lib:split_url(Url),
 	Path = case Host of
@@ -57,11 +57,14 @@ init({Url, _Config}) ->
 			%% non absolute file path
 			Host++UrlPath
 	end,
+    Prio = proplists:get_value("Priority", Config, 100),
+    
     case file:list_dir(Path) of
         {ok, Files} ->
-            % TODO: Verify storage here
-            ffs_chunk_server:update_storage(Url, self(), Files),
-    	    {ok, #state{url=Url, path=Path, chunks = Files}, ?REFRESH_INTERVAL};
+            ffs_chunk_server:update_storage(Url, self(), Files, Prio),
+    	    {ok, #state{url=Url, path=Path, chunks = Files,
+                        name = Name, priority = Prio},
+             ?REFRESH_INTERVAL};
         {error, _} ->
 	        {stop, bad_path_for_storage, Path}
     end.
@@ -118,7 +121,7 @@ handle_cast({read, File, From, Ref}, State) ->
     StartTime = now(),
     % Read data from file
     case file:read_file(join(State#state.path, File)) of
-	{ok, Data} ->
+    {ok, Data} ->
         %% Verify that data is correct
         case ffs_lib:get_chunkid(Data) of
         File ->
@@ -209,7 +212,7 @@ code_change(_OldVsn, State, _Extra) ->
 join(Path, Filename) ->
     filename:join(Path, Filename).
 
-refresh_storage(State) ->
+refresh_storage(State = #state{priority = Prio}) ->
     {ok, Files} = file:list_dir(State#state.path),
-    ffs_chunk_server:update_storage(State#state.url, self(), Files),
+    ffs_chunk_server:update_storage(State#state.url, self(), Files, Prio),
     State#state{chunks = Files}.

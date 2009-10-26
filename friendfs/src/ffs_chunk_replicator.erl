@@ -32,7 +32,7 @@
 -include("debug.hrl").
 
 %% API
--export([start/1]).
+-export([start_link/1]).
 
 %% Replication API
 -export([info/0, refresh/0]).
@@ -61,11 +61,11 @@
 %% Starts the chunk replication server
 %%
 %% @spec
-%%   start(config()) ->
+%%   start_link(config()) ->
 %%     {ok, pid()} | {error, {already_started, pid()}}
 %% @end
 %%--------------------------------------------------------------------
-start(Config) ->
+start_link(Config) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [Config], []).
 
 

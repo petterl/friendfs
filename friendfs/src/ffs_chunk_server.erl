@@ -24,7 +24,7 @@
 
 %% Storage API
 -export([read/1, write/2, delete/1, delete/2]).
--export([connected_storages/0, update_storage/3]).
+-export([connected_storages/0, update_storage/4]).
 -export([register_chunk/3, info/0, replication_level/1]).
 
 %% gen_server callbacks
@@ -35,7 +35,8 @@
 -define(READ_TIMEOUT, 60000). % 60 sec read timeout 
 
 -record(state, {storages = [],  %% Registered storages
-                sessions = []
+                sessions = [],
+                replicator
                }).
 
 -record(session, {ref,
@@ -150,11 +151,11 @@ delete(ChunkId, StorageUrl) ->
 %%   Used by storages to update their status
 %%
 %% @spec
-%%   update_storage(storage_url(), pid(), [chunk_id()]) -> ok
+%%   update_storage(storage_url(), pid(), [chunk_id()], integer()) -> ok
 %% @end
 %%--------------------------------------------------------------------
-update_storage(Url, Pid, ChunkIds) ->
-    gen_server:cast(?SERVER, {update_storage, Pid, Url, ChunkIds}).
+update_storage(Url, Pid, ChunkIds, Priority) ->
+    gen_server:cast(?SERVER, {update_storage, Pid, Url, ChunkIds, Priority}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -214,10 +215,11 @@ info() ->
 %% {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init(_Config) ->
+init(Config) ->
+    {ok, Pid} = ffs_chunk_replicator:start_link(Config),
     ets:new(storages, [set,protected,named_table,{keypos, 2}]),
     ets:new(chunks, [set,protected,named_table,{keypos, 2}]),
-    {ok, #state{}}.
+    {ok, #state{replicator = Pid}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -350,7 +352,7 @@ handle_call( info, _From, State) ->
     [io:format("~p ~s~n", [S#storage.pid, S#storage.url]) || S <- ets:tab2list(storages)],
     io:format("~nChunks: (id on storages:ref/ratio)~n", []),
     [io:format("~s on ~p:~p/~p~n", [C#chunk.id, C#chunk.storages, C#chunk.ref_cnt, C#chunk.ratio]) || C <- ets:tab2list(chunks)],
-    {reply, ok, State};
+    {reply, State, State};
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
@@ -451,7 +453,7 @@ handle_cast({ delete, ChunkId, StorageUrl}, State) ->
     end,
     {noreply, State};
 
-handle_cast({update_storage, From, Url, ChunkIds}, State) ->
+handle_cast({update_storage, From, Url, ChunkIds, Priority}, State) ->
     case ets:lookup(storages, Url) of
         [#storage{}] ->
             Updated =
@@ -465,8 +467,10 @@ handle_cast({update_storage, From, Url, ChunkIds}, State) ->
                                           Acc;
                                       false ->
                                           % Added
-                                          ets:update_element(chunks, ChunkId,
-                                                             {#chunk.storages, StoragePids ++ [From]}),
+                                          ets:update_element(
+                                            chunks, ChunkId,
+                                            {#chunk.storages,
+                                             StoragePids ++ [From]}),
                                           true
                                   end;
                               false ->
@@ -474,8 +478,10 @@ handle_cast({update_storage, From, Url, ChunkIds}, State) ->
                                   case lists:member(From, StoragePids) of
                                       true ->
                                           % Removed
-                                          ets:update_element(chunks, ChunkId,
-                                                             {#chunk.storages, StoragePids -- [From]}),
+                                          ets:update_element(
+                                            chunks, ChunkId,
+                                            {#chunk.storages,
+                                             StoragePids -- [From]}),
                                           true;
                                       false ->
                                           Acc
@@ -496,7 +502,8 @@ handle_cast({update_storage, From, Url, ChunkIds}, State) ->
             % Monitor that storage if it goes down
             Ref = erlang:monitor(process, From),
             % Add storage information to list of connect storages
-            ets:insert(storages, #storage{url = Url, pid = From, ref = Ref}),
+            ets:insert(storages, #storage{url = Url, pid = From,
+                                          ref = Ref, priority=Priority}),
             % Update handled chunks
             add_storage_to_chunks(ChunkIds, From)
     end,
