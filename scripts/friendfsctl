@@ -54,7 +54,7 @@ function start() {
         exit 1
     fi
     START_ERL_DATA=${1:-$RELDIR/start_erl.data}
-    $ROOTDIR/bin/run_erl -daemon $ROOTDIR/pipes/ $ROOTDIR/log "exec $ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $START_ERL_DATA -pa $ROOTDIR/patches/ -sname friendfs -friendfs config_path '\"$FRIENDFS_CONF\"' " 
+    $ROOTDIR/bin/run_erl -daemon $ROOTDIR/pipes/ $ROOTDIR/log "exec $ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $START_ERL_DATA -pa $ROOTDIR/patches/ -sname friendfs -friendfs config_path '\"$FRIENDFS_CONF\"' -friendfs mod start" 
     # TODO: check that it started
     echo "done"
 }
@@ -76,7 +76,8 @@ function restart() {
 
 function status() {
     if check_running; then
-        $ERL_CALL  -sname $ERL_SNAME -a "friendfsctrl status []" 
+	START_ERL_DATA=${1:-$RELDIR/start_erl.data}
+	$ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $START_ERL_DATA -pa $ROOTDIR/patches/ -sname friendfsctrl -setcookie friendfs -noshell -friendfs config_path '"$FRIENDFS_CONF"' -friendfs cmd status -sasl errlog_type error
         exit 0
     fi
     echo "Not running"
