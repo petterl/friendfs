@@ -75,12 +75,24 @@ function restart() {
 }
 
 function status() {
-    if check_running; then
-	START_ERL_DATA=${1:-$RELDIR/start_erl.data}
-	$ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $START_ERL_DATA -pa $ROOTDIR/patches/ -sname friendfsctrl -setcookie friendfs -noshell -friendfs config_path '"$FRIENDFS_CONF"' -friendfs cmd status -sasl errlog_type error
-        exit 0
+#    if check_running; then
+    if ! check_config $FRIENDFS_CONF; then
+        FRIENDFS_CONF=$HOME/.friendfs.conf
+        if ! check_config $FRIENDFS_CONF; then
+            echo "failed"
+            echo "Copying config template to $FRIENDFS_CONF"
+            cp $ROOTDIR/friendfs/doc/friendfs.conf $FRIENDFS_CONF
+            echo ""
+            echo "Update $FRIENDFS_CONF with your configuration and start again"
+            echo ""
+            exit 100
+        fi
     fi
-    echo "Not running"
+	START_ERL_DATA=${1:-$RELDIR/start_erl.data}
+	$ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $START_ERL_DATA -pa $ROOTDIR/patches/ -sname friendfsctrl -setcookie friendfs -noshell -friendfs config_path "'${FRIENDFS_CONF}'" -friendfs cmd status -sasl errlog_type error
+        exit 0
+#    fi
+#    echo "Not running"
 }
 
 function connect() {

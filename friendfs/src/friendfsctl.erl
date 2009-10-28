@@ -15,13 +15,9 @@
 %%%-------------------------------------------------------------------
 
 -module (friendfsctl).
--behaviour (application).
 -include("debug.hrl").
--export ([ start/0,
-           start/2,
-           stop/0,
-           stop/1
-           %add_config/2
+-export ([ cmd/1,
+           handle_cmd/1
           ]).
 
 %-=====================================================================-
@@ -30,41 +26,21 @@
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Start friendfs application
+%% Run command
 %%
 %% @spec
-%%   start() -> ok
+%%   cmd() -> ok
 %% @end
 %%--------------------------------------------------------------------
 
-start() ->
-    start(permanent).
-
-%hidden
-start(Type) ->
-    application:start(fuserl),
-    application:start(friendfs, Type).
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Fetch config and start supervisors
-%%
-%% @spec
-%%   start(_Type, _Args) -> ok
-%% @end
-%%--------------------------------------------------------------------
-start(_Type, _Args) ->
+cmd(status) ->
     {ok,ConfigPath} = application:get_env(friendfs,config_path),
-    {ok,_DefaultsPath} = application:get_env(friendfs,config_default_path),
-    ffs_config:init(),
-    
-    case ffs_config:parse_config(ConfigPath) of
-	ok ->
-	    ?DBG("Loading configuration\n",[]);
-	Err ->
-	    ?ERR("Could not read config file!: ~p", [Err]),
-	    exit(1)
+    case ffs_config:start(ConfigPath) of
+        ok ->
+            ?DBG("Loading configuration\n",[]);
+        Err ->
+            ?ERR("Could not read config file!: ~p", [Err]),
+            exit(1)
     end,
     case ffs_config:get_secret() of
 	not_found -> 
@@ -72,31 +48,15 @@ start(_Type, _Args) ->
 	Cookie ->
 	    erlang:set_cookie(node(), list_to_atom(Cookie))
     end,
+    Node = list_to_atom("friendfs@"++hd(tl(string:tokens(atom_to_list(node()), "@")))),
+    R = rpc:call(Node, friendfsctl, handle_cmd, [status]),
+    io:format("RPC: ~p~n", [R]);
 
-    init_filesystems(),
-    friendfs_sup:start_link([]).
+cmd(Other) ->
+    io:format("Unknown command: ~p~n",[Other]).
 
-init_filesystems() ->
-    ffs_fat:init_counters(),
-    lists:foreach(fun({{"Filesystem",Name},_Args}) ->
-			  ffs_filesystem:init(Name)
-		  end, ffs_config:get_filesystems()).
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%%   Stop friendfs and fuserl application
-%%
-%% @spec
-%%   stop() -> ok
-%% @end
-%%--------------------------------------------------------------------
-stop () ->
-  application:stop(fuserl),
-  application:stop(friendfs).
-
-%% @hidden
-
-stop(_State) ->
-  ok.
-
+handle_cmd(status) ->
+    S = ffs_chunk_server:info(),
+    io:format("~p~n", [S]),
+    ok.

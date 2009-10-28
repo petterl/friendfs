@@ -62,14 +62,12 @@ start(start,_Type,_Args) ->
     io:format("Type = ~p, Args = ~p\n",[_Type,_Args]),
     {ok,ConfigPath} = application:get_env(friendfs,config_path),
     {ok,_DefaultsPath} = application:get_env(friendfs,config_default_path),
-    ffs_config:init(),
-    
-    case ffs_config:parse_config(ConfigPath) of
-	ok ->
-	    ?DBG("Loading configuration\n",[]);
-	Err ->
-	    ?ERR("Could not read config file!: ~p", [Err]),
-	    exit(1)
+    case ffs_config:start(ConfigPath) of
+        ok ->
+            ?DBG("Loading configuration\n",[]);
+        Err ->
+            ?ERR("Could not read config file!: ~p", [Err]),
+            exit(1)
     end,
     case ffs_config:get_secret() of
 	not_found -> 
@@ -80,8 +78,8 @@ start(start,_Type,_Args) ->
 
     init_filesystems(),
     friendfs_sup:start_link([]);
-start(_Else,_Type,_Args) ->
-    io:format("Else:~p\n",[_Else]),
+start(Cmd,_Type,_Args) ->
+    friendfsctl:cmd(Cmd),
     init:stop(),
     {ok,self()}.
 

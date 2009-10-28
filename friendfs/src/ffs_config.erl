@@ -6,12 +6,12 @@
 %%%-------------------------------------------------------------------
 -module(ffs_config).
 
--export([init/0, parse_config/1, read/1, write/2]).
+-export([start/1, parse_config/1, read/1, write/2]).
 -export([get_filesystems/0, get_storages/0, get_secret/0]).
 
-init() ->
+start(ConfigFile) ->
     ets:new(ffs_config, [public,named_table]),
-    ok.
+    parse_config(ConfigFile).
 
 parse_config(ConfigFile) ->
     case ffs_lib:parse_config(ConfigFile) of
