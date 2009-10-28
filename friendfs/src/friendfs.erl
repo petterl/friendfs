@@ -55,6 +55,11 @@ start(Type) ->
 %% @end
 %%--------------------------------------------------------------------
 start(_Type, _Args) ->
+    {ok,Cmd} = application:get_env(friendfs,cmd),
+    start(Cmd,_Type,_Args).
+
+start(start,_Type,_Args) ->
+    io:format("Type = ~p, Args = ~p\n",[_Type,_Args]),
     {ok,ConfigPath} = application:get_env(friendfs,config_path),
     {ok,_DefaultsPath} = application:get_env(friendfs,config_default_path),
     ffs_config:init(),
@@ -74,7 +79,11 @@ start(_Type, _Args) ->
     end,
 
     init_filesystems(),
-    friendfs_sup:start_link([]).
+    friendfs_sup:start_link([]);
+start(_Else,_Type,_Args) ->
+    io:format("Else:~p\n",[_Else]),
+    init:stop(),
+    {ok,self()}.
 
 init_filesystems() ->
     ffs_fat:init_counters(),
