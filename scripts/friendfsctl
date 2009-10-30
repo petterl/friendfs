@@ -1,71 +1,53 @@
 #!/bin/bash 
 
-ERL_SNAME=friendfs
-ERL_CALL=erl_call
+HOST=localhost
 ROOTDIR=`cd $(dirname $0)/..;pwd`
 if [ -z "$RELDIR" ]; then
     RELDIR=$ROOTDIR/releases
 fi
 FRIENDFS_CONF=${FRIENDFS_CONF:-/etc/friendfs.conf}
+if [ ! -f ${FRIENDFS_CONF} ]; then
+    FRIENDFS_CONF=$HOME/.friendfs.conf
+fi
+[ ! -f ${FRIENDFS_CONF} ] || cp $ROOTDIR/friendfs/doc/friendfs.conf $FRIENDFS_CONF
 
-function check_config() {
-    # Check validity of config file
-    if [ ! -f $1 ]; then
-        return 1
-    fi
-    return 0
-}
+START_ERL="$ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $RELDIR/start_erl.data -pa $ROOTDIR/patches/"
 
-function check_running() {
-    # Check if friendfs daemon is running
-    $ERL_CALL -sname $ERL_SNAME -a "ok" 2>/dev/null 1>&2
-    return $?
-}
+RUN_ERL="$ROOTDIR/bin/run_erl -daemon $ROOTDIR/pipes/ $ROOTDIR/log " 
 
-function check_environment() {
-    # Check that run_erl has been built
-    if [ ! -f $ROOTDIR/bin/run_erl ]; then
-        return 1
-    fi
-    return 0
+function ctl() {
+    $START_ERL -sname friendfsctrl@${HOST} \
+        -noshell \
+        -friendfs config_path "\"${FRIENDFS_CONF}\"" \
+        -sasl errlog_type error \
+        -friendfs cmd "\"${@}\"" 
 }
 
 function start() {
-    if check_running; then
-        echo "Already started"
-        exit 1
-    fi
-    echo -n "Starting..."
-    if ! check_config $FRIENDFS_CONF; then
-        FRIENDFS_CONF=$HOME/.friendfs.conf
-        if ! check_config $FRIENDFS_CONF; then
-            echo "failed"
-            echo "Copying config template to $FRIENDFS_CONF"
-            cp $ROOTDIR/friendfs/doc/friendfs.conf $FRIENDFS_CONF
-            echo ""
-            echo "Update $FRIENDFS_CONF with your configuration and start again"
-            echo ""
-            exit 100
-        fi
-    fi
-    if ! check_environment; then
+    echo -n "Starting FriendFS..."
+    $RUN_ERL "exec ${START_ERL} -sname friendfs@${HOST} -friendfs config_path '\"$FRIENDFS_CONF\"'"
+    # check if start is ok cmd ping
+    if true; then
+        echo "done"
+    else
         echo "failed"
-        echo "Make sure you have run make first"
-        exit 1
     fi
-    START_ERL_DATA=${1:-$RELDIR/start_erl.data}
-    $ROOTDIR/bin/run_erl -daemon $ROOTDIR/pipes/ $ROOTDIR/log "exec $ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $START_ERL_DATA -pa $ROOTDIR/patches/ -sname friendfs -friendfs config_path '\"$FRIENDFS_CONF\"' -friendfs mod start" 
-    # TODO: check that it started
-    echo "done"
 }
 
 function stop() {
-    if check_running; then
-        $ERL_CALL -sname $ERL_SNAME -a "init stop []" >/dev/null
-        echo "Stopped"
-        exit 0
+    echo -n "Stopping FriendFS..."
+    ctl stop
+    # $ERL_CALL -sname $ERL_SNAME -a "init stop []" >/dev/null
+    # check if start is ok cmd ping
+    if true; then
+        echo "done"
+    else
+        echo "failed"
     fi
-    echo "Already stopped"
+}
+
+function shell() {
+    $ROOTDIR/bin/to_erl $ROOTDIR/pipes/
 }
 
 function restart() {
@@ -74,30 +56,13 @@ function restart() {
     start
 }
 
-function status() {
-#    if check_running; then
-    if ! check_config $FRIENDFS_CONF; then
-        FRIENDFS_CONF=$HOME/.friendfs.conf
-        if ! check_config $FRIENDFS_CONF; then
-            echo "failed"
-            echo "Copying config template to $FRIENDFS_CONF"
-            cp $ROOTDIR/friendfs/doc/friendfs.conf $FRIENDFS_CONF
-            echo ""
-            echo "Update $FRIENDFS_CONF with your configuration and start again"
-            echo ""
-            exit 100
-        fi
-    fi
-	START_ERL_DATA=${1:-$RELDIR/start_erl.data}
-	$ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $START_ERL_DATA -pa $ROOTDIR/patches/ -sname friendfsctrl -setcookie friendfs -noshell -friendfs config_path "'${FRIENDFS_CONF}'" -friendfs cmd status -sasl errlog_type error
-        exit 0
-#    fi
-#    echo "Not running"
+function usage() {
+    ctl usage
+    exit
 }
 
-function connect() {
-    $ROOTDIR/bin/to_erl $ROOTDIR/pipes/
-}
+[ $# -lt 1 ] && usage 
+
 
 function help() {
     echo "The valid commands are: "
@@ -111,13 +76,18 @@ function help() {
 }
 
 
+function check_running() {
+    # Check if friendfs daemon is running
+    $ERL_CALL -sname $ERL_SNAME -a "ok" 2>/dev/null 1>&2
+    return $?
+}
+
+
 case $1 in
-    'status') status ;;
     'start') start ;;
-    'stop') stop ;;
+    'shell') shell ;;
     'restart') restart ;;
-    'connect') connect ;;
-    *) echo "$1 is not a valid command"
-       help ;;
+    'stop') stop ;;
+    *) ctl "$@" 
 esac
 

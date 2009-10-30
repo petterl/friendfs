@@ -76,11 +76,11 @@ start(start,_Type,_Args) ->
 	    erlang:set_cookie(node(), list_to_atom(Cookie))
     end,
 
+    
     init_filesystems(),
     friendfs_sup:start_link([]);
 start(Cmd,_Type,_Args) ->
     friendfsctl:cmd(Cmd),
-    init:stop(),
     {ok,self()}.
 
 init_filesystems() ->

@@ -33,11 +33,11 @@
 %% @end
 %%--------------------------------------------------------------------
 
-cmd(status) ->
+cmd(Command) ->
     {ok,ConfigPath} = application:get_env(friendfs,config_path),
     case ffs_config:start(ConfigPath) of
         ok ->
-            ?DBG("Loading configuration\n",[]);
+            ok;
         Err ->
             ?ERR("Could not read config file!: ~p", [Err]),
             exit(1)
@@ -48,15 +48,39 @@ cmd(status) ->
 	Cookie ->
 	    erlang:set_cookie(node(), list_to_atom(Cookie))
     end,
-    Node = list_to_atom("friendfs@"++hd(tl(string:tokens(atom_to_list(node()), "@")))),
-    R = rpc:call(Node, friendfsctl, handle_cmd, [status]),
-    io:format("RPC: ~p~n", [R]);
+    Node = list_to_atom("friendfs@localhost"),
+    case rpc:call(Node, ?MODULE, handle_cmd, [Command]) of
+        {badrpc, nodedown} ->
+            io:format("FriendFS not started!~n", []),
+            halt();
+        {badrpc, R} ->
+            io:format("Failed to communicate with ~p: ~p~n~n", [Node, R]),
+            handle_cmd("usage"),
+            halt();
+        S ->
+            halt(S)
+    end.
 
-cmd(Other) ->
-    io:format("Unknown command: ~p~n",[Other]).
-
-
-handle_cmd(status) ->
-    S = ffs_chunk_server:info(),
+handle_cmd("status") ->
+    S = lists:flatten(ffs_chunk_server:info()),
     io:format("~p~n", [S]),
-    ok.
+    0;
+handle_cmd("stop") ->
+    %% Spawn off to make sure rpc returns
+    spawn(fun() -> timer:sleep(10),init:stop() end),
+    0;
+
+handle_cmd("usage") ->
+    io:format( "The valid commands are: \n"
+                   "   start - start the friendfs daemon\n"
+                   "   stop - stop the friendfs daemon\n"
+                   "   status - get status of running daemon\n"
+                   "   restart - restart the friendfs daemon\n"
+                   "   connect - connect to the friendfs daemon\n"
+                   "\n"
+                   "To mount a filesystem see 'friendfs'\n", []),
+    10;
+handle_cmd(Other) ->
+    io:format("Unknown command: ~p~n~n", [Other]),
+    handle_cmd("usage"),
+    100.
