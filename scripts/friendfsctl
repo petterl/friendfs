@@ -16,11 +16,12 @@ START_ERL="$ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $RELDIR/start_erl.data -pa $R
 RUN_ERL="$ROOTDIR/bin/run_erl -daemon $ROOTDIR/pipes/ $ROOTDIR/log " 
 
 function ctl() {
-    $START_ERL -sname friendfsctrl@${HOST} \
+    $START_ERL -sname friendfsctl$$@${HOST} \
         -noshell \
         -friendfs config_path "\"${FRIENDFS_CONF}\"" \
         -sasl errlog_type error \
-        -friendfs cmd "\"${@}\"" 
+        -friendfs cmd ctl \
+	-extra "$@"
 }
 
 function start() {

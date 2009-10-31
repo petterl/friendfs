@@ -56,15 +56,12 @@ start(Type) ->
 %%--------------------------------------------------------------------
 start(_Type, _Args) ->
     {ok,Cmd} = application:get_env(friendfs,cmd),
-    start(Cmd,_Type,_Args).
 
-start(start,_Type,_Args) ->
-    io:format("Type = ~p, Args = ~p\n",[_Type,_Args]),
     {ok,ConfigPath} = application:get_env(friendfs,config_path),
     {ok,_DefaultsPath} = application:get_env(friendfs,config_default_path),
     case ffs_config:start(ConfigPath) of
         ok ->
-            ?DBG("Loading configuration\n",[]);
+            ok;
         Err ->
             ?ERR("Could not read config file!: ~p", [Err]),
             exit(1)
@@ -75,12 +72,17 @@ start(start,_Type,_Args) ->
 	Cookie ->
 	    erlang:set_cookie(node(), list_to_atom(Cookie))
     end,
+    start(Cmd,_Type,_Args).
 
-    
+start(start,_Type,_Args) ->
     init_filesystems(),
     friendfs_sup:start_link([]);
-start(Cmd,_Type,_Args) ->
+start(ctl,_Type,_Args) ->
+    Cmd = init:get_plain_arguments(),
     friendfsctl:cmd(Cmd),
+    {ok,self()};
+start(Other,_Type,_Args) ->
+    io:format("Bad start mode: ~p~n", [Other]),
     {ok,self()}.
 
 init_filesystems() ->

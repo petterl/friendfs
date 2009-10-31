@@ -34,20 +34,6 @@
 %%--------------------------------------------------------------------
 
 cmd(Command) ->
-    {ok,ConfigPath} = application:get_env(friendfs,config_path),
-    case ffs_config:start(ConfigPath) of
-        ok ->
-            ok;
-        Err ->
-            ?ERR("Could not read config file!: ~p", [Err]),
-            exit(1)
-    end,
-    case ffs_config:get_secret() of
-	not_found -> 
-	    ok;
-	Cookie ->
-	    erlang:set_cookie(node(), list_to_atom(Cookie))
-    end,
     Node = list_to_atom("friendfs@localhost"),
     case rpc:call(Node, ?MODULE, handle_cmd, [Command]) of
         {badrpc, nodedown} ->
@@ -55,32 +41,43 @@ cmd(Command) ->
             halt();
         {badrpc, R} ->
             io:format("Failed to communicate with ~p: ~p~n~n", [Node, R]),
-            handle_cmd("usage"),
+            usage(),
             halt();
         S ->
             halt(S)
     end.
 
-handle_cmd("status") ->
+handle_cmd(["status"]) ->
     S = lists:flatten(ffs_chunk_server:info()),
     io:format("~p~n", [S]),
     0;
-handle_cmd("stop") ->
+handle_cmd(["stop"]) ->
     %% Spawn off to make sure rpc returns
     spawn(fun() -> timer:sleep(10),init:stop() end),
-    0;
-
-handle_cmd("usage") ->
-    io:format( "The valid commands are: \n"
-                   "   start - start the friendfs daemon\n"
-                   "   stop - stop the friendfs daemon\n"
-                   "   status - get status of running daemon\n"
-                   "   restart - restart the friendfs daemon\n"
-                   "   connect - connect to the friendfs daemon\n"
-                   "\n"
-                   "To mount a filesystem see 'friendfs'\n", []),
+    0;  
+ 
+handle_cmd(["usage"]) ->  
+    usage(),
     10;
+handle_cmd(["load", M]) ->
+    io:format("Load ~p into node", [M]),
+    Mod = list_to_atom(M),  
+    code:purge(Mod),
+    code:delete(Mod),
+    R = code:load_file(Mod),
+    io:format(": ~p~n", [R]),
+    0;
 handle_cmd(Other) ->
     io:format("Unknown command: ~p~n~n", [Other]),
-    handle_cmd("usage"),
+    usage(),
     100.
+
+usage() ->
+    io:format( "The valid commands are: \n"
+	       "   start - start the friendfs daemon\n"
+	       "   stop - stop the friendfs daemon\n"
+	       "   status - get status of running daemon\n"
+	       "   restart - restart the friendfs daemon\n"
+	       "   connect - connect to the friendfs daemon\n"
+	       "\n"
+	       "To mount a filesystem see 'friendfs'\n", []).

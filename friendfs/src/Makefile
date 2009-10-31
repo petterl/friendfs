@@ -4,6 +4,7 @@ TEST_DIR=../tests
 ROOTDIR=../..
 DBG_DIR=$(EBIN)/dbg
 ERL_CALL=erl_call
+FRIENDFSCTL=../../scripts/friendfsctl
 ERL_COMPILE_FLAGS += -I$(INCLUDE) +warn_unused_vars +nowarn_shadow_vars +warn_unused_import +debug_info
 
 INCLUDES=$(wildcard $(INCLUDE)/*.hrl)
@@ -37,9 +38,7 @@ $(EBIN)/%.beam:%.erl
 	@echo " * Compiling $<"
 	@erlc -W $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 	@echo " * Load $(basename $<) into node $(ERL_SNAME)"
-	-@$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a "code purge [$(basename $<)]" > /dev/null
-	-@$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a "code delete [$(basename $<)]"  > /dev/null
-	-@$(ERL_CALL) -c $(ERL_COOKIE) -sname $(ERL_SNAME) -a "code load_file [$(basename $<)]" > /dev/null
+	$(FRIENDFSCTL) load $(basename $<)
 
 %.erl:%.yrl
 	@erl -boot start_clean -noshell -s yecc file $< -s init stop > /dev/null
