@@ -3,8 +3,8 @@ INCLUDE=../include
 TEST_DIR=../tests
 ROOTDIR=../..
 DBG_DIR=$(EBIN)/dbg
-ERL_CALL=erl_call
-FRIENDFSCTL=../../scripts/friendfsctl
+PIPE=$(ROOTDIR)/pipes/erlang.pipe.1.r
+FRIENDFSCTL=$(ROOTDIR)/scripts/friendfsctl
 ERL_COMPILE_FLAGS += -I$(INCLUDE) +warn_unused_vars +nowarn_shadow_vars +warn_unused_import +debug_info
 
 INCLUDES=$(wildcard $(INCLUDE)/*.hrl)
@@ -34,11 +34,15 @@ $(OBJECTS): $(INCLUDES)
 clean:
 	rm -fr $(OBJECTS) $(APP) $(EBIN) $(DBG_DIR)
 
-$(EBIN)/%.beam:%.erl
+$(EBIN)/%.beam:%.erl $(FRIENDSCTL) $(PIPE)
 	@echo " * Compiling $<"
 	@erlc -W $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 	@echo " * Load $(basename $<) into node $(ERL_SNAME)"
-	$(FRIENDFSCTL) load $(basename $<)
+	@$(FRIENDFSCTL) load $(basename $<)
+
+$(EBIN)/%.beam:%.erl
+	@echo " * Compiling $<"
+	@erlc -W $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 
 %.erl:%.yrl
 	@erl -boot start_clean -noshell -s yecc file $< -s init stop > /dev/null

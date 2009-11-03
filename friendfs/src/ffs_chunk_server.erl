@@ -348,11 +348,12 @@ handle_call({ register_chunk, ChunkId, Ratio, _FsName}, _From, State) ->
     {reply, Res, State};
 
 handle_call( info, _From, State) ->
-    A0 = [io_lib:format("Storages:~n", [])],
-    A1 = A0 ++ [io_lib:format("~p ~s~n", [S#storage.pid, S#storage.url]) || S <- ets:tab2list(storages)],
-    A2 = A1 ++ io_lib:format("~nChunks: (id on storages:ref/ratio)~n", []),
-    A3 = A2 ++ [io_lib:format("~s on ~p:~p/~p~n", [C#chunk.id, C#chunk.storages, C#chunk.ref_cnt, C#chunk.ratio]) || C <- ets:tab2list(chunks)],
-    {reply, A3, State};
+    Res = {{storages,
+            [{S#storage.pid, S#storage.url} || S <- ets:tab2list(storages)]},
+           {chunks,
+            [{C#chunk.id, C#chunk.storages, C#chunk.ref_cnt, C#chunk.ratio} || C <- ets:tab2list(chunks)]}
+          },
+    {reply, Res, State};
 
 handle_call(_Request, _From, State) ->
     Reply = ok,

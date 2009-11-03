@@ -48,8 +48,8 @@ cmd(Command) ->
     end.
 
 handle_cmd(["status"]) ->
-    S = lists:flatten(ffs_chunk_server:info()),
-    io:format("~p~n", [S]),
+    {{_storages, S},{_chunks, C}} = ffs_chunk_server:info(),
+    io:format("Storages:\n~p\nChunks:\n~p\n", [S, C]),
     0;
 handle_cmd(["stop"]) ->
     %% Spawn off to make sure rpc returns
@@ -60,13 +60,17 @@ handle_cmd(["usage"]) ->
     usage(),
     10;
 handle_cmd(["load", M]) ->
-    io:format("Load ~p into node", [M]),
+    io:format("Load ~p into node: ", [M]),
     Mod = list_to_atom(M),  
     code:purge(Mod),
-    code:delete(Mod),
-    R = code:load_file(Mod),
-    io:format(": ~p~n", [R]),
-    0;
+    case code:load_file(Mod) of
+        {module, Mod} ->
+            io:format("ok~n", []),
+            0;
+        {error, Err} ->
+            io:format("error ~p~n", [Err]),
+            100
+    end;
 handle_cmd(Other) ->
     io:format("Unknown command: ~p~n~n", [Other]),
     usage(),
