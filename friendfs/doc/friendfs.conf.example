@@ -7,6 +7,9 @@ Secret friendfs-secret-code-word
   Ratio 1
 </Filesystem>
 
-<Storage temp>
+<Storage temp1>
+  Comment "File system 1"
   Url "file://tmp/ffs_data"
+  Quota 10Mb
 </Storage>
+

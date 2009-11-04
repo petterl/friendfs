@@ -6,13 +6,13 @@ if [ -z "$RELDIR" ]; then
     RELDIR=$ROOTDIR/releases
 fi
 FRIENDFS_CONF=${FRIENDFS_CONF:-/etc/friendfs.conf}
+
 if [ ! -f ${FRIENDFS_CONF} ]; then
     FRIENDFS_CONF=$HOME/.friendfs.conf
 fi
-[ ! -f ${FRIENDFS_CONF} ] || cp $ROOTDIR/friendfs/doc/friendfs.conf $FRIENDFS_CONF
+[ ! -f ${FRIENDFS_CONF} ] || cp $ROOTDIR/friendfs/doc/friendfs.conf.example $FRIENDFS_CONF
 
 START_ERL="$ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $RELDIR/start_erl.data -pa $ROOTDIR/patches/"
-
 RUN_ERL="$ROOTDIR/bin/run_erl -daemon $ROOTDIR/pipes/ $ROOTDIR/log " 
 
 function ctl() {
@@ -21,29 +21,34 @@ function ctl() {
         -friendfs config_path "\"${FRIENDFS_CONF}\"" \
         -sasl errlog_type error \
         -friendfs cmd ctl \
-	-extra "$@"
+	    -extra "$@"
 }
 
 function start() {
-    echo -n "Starting FriendFS..."
-    $RUN_ERL "exec ${START_ERL} -sname friendfs@${HOST} -friendfs config_path '\"$FRIENDFS_CONF\"'"
-    # check if start is ok cmd ping
-    if true; then
-        echo "done"
+    echo -n "Starting FriendFS... "
+    if ctl ping; then
+        echo "already started"
     else
-        echo "failed"
+        $RUN_ERL "exec ${START_ERL} \
+            -sname friendfs@${HOST} \
+            -friendfs config_path '\"$FRIENDFS_CONF\"'"
+        sleep 1
+        if ctl ping; then
+            echo "done"
+        else
+            echo "failed to start, check logs"
+        fi
     fi
 }
 
 function stop() {
-    echo -n "Stopping FriendFS..."
+    echo -n "Stopping FriendFS... "
     ctl stop
-    # $ERL_CALL -sname $ERL_SNAME -a "init stop []" >/dev/null
-    # check if start is ok cmd ping
-    if true; then
-        echo "done"
+    sleep 1
+    if ctl ping; then
+        echo "failed to stop, check logs"
     else
-        echo "failed"
+        echo "done"
     fi
 }
 
@@ -75,14 +80,6 @@ function help() {
     echo ""
     echo "To mount a filesystem see 'friendfs'"
 }
-
-
-function check_running() {
-    # Check if friendfs daemon is running
-    $ERL_CALL -sname $ERL_SNAME -a "ok" 2>/dev/null 1>&2
-    return $?
-}
-
 
 case $1 in
     'start') start ;;
