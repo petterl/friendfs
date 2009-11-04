@@ -61,18 +61,18 @@ start(_Type, _Args) ->
     {ok,_DefaultsPath} = application:get_env(friendfs,config_default_path),
     case ffs_config:start(ConfigPath) of
         ok ->
-            ok;
+            case ffs_config:get_secret() of
+                not_found -> 
+                    ok;
+                Cookie ->
+                    erlang:set_cookie(node(), list_to_atom(Cookie))
+            end,
+            start(Cmd,_Type,_Args);
         Err ->
             ?ERR("Could not read config file!: ~p", [Err]),
-            exit(1)
-    end,
-    case ffs_config:get_secret() of
-	not_found -> 
-	    ok;
-	Cookie ->
-	    erlang:set_cookie(node(), list_to_atom(Cookie))
-    end,
-    start(Cmd,_Type,_Args).
+            {error, conf_error}
+    end.
+
 
 start(start,_Type,_Args) ->
     init_filesystems(),

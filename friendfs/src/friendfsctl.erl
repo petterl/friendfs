@@ -20,6 +20,9 @@
            handle_cmd/1
           ]).
 
+-define(NODE, 'friendfs@localhost').
+
+
 %-=====================================================================-
 %-                        application callbacks                        -
 %-=====================================================================-
@@ -33,16 +36,35 @@
 %% @end
 %%--------------------------------------------------------------------
 
+cmd(["ping"]) ->
+    case net_adm:ping(?NODE) of
+        pong ->
+            halt(0);
+        pang ->
+            halt(255)
+    end;  
+
+cmd(["stop"]) ->
+    case rpc:call(?NODE, ?MODULE, handle_cmd, [["stop"]]) of
+        {badrpc, nodedown} ->
+            halt(0);
+        {badrpc, R} ->
+            io:format("Failed to communicate with ~p: ~p~n~n", [?NODE, R]),
+            usage(),
+            halt(100);
+        S ->
+            halt(S)
+    end;
+
 cmd(Command) ->
-    Node = list_to_atom("friendfs@localhost"),
-    case rpc:call(Node, ?MODULE, handle_cmd, [Command]) of
+    case rpc:call(?NODE, ?MODULE, handle_cmd, [Command]) of
         {badrpc, nodedown} ->
             io:format("FriendFS not started!~n", []),
-            halt();
+            halt(255);
         {badrpc, R} ->
-            io:format("Failed to communicate with ~p: ~p~n~n", [Node, R]),
+            io:format("Failed to communicate with ~p: ~p~n~n", [?NODE, R]),
             usage(),
-            halt();
+            halt(100);
         S ->
             halt(S)
     end.
