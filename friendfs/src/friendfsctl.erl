@@ -16,6 +16,7 @@
 
 -module (friendfsctl).
 -include("debug.hrl").
+-include("chunk_server.hrl").
 -export ([ cmd/1,
            handle_cmd/1
           ]).
@@ -70,8 +71,24 @@ cmd(Command) ->
     end.
 
 handle_cmd(["status"]) ->
-    {{_storages, S},{_chunks, C}} = ffs_chunk_server:info(),
-    io:format("Storages:\n~p\nChunks:\n~p\n", [S, C]),
+    {{_storages, S0},{_chunks, C0}} = ffs_chunk_server:info(),
+    io:format("Storages:\n", []),
+    lists:foreach(
+      fun(S) ->
+              io:format("~s\n  P:~p R: ~s W: ~s\n",
+                        [S#storage.url, S#storage.priority,
+                         speed(S#storage.read_speed), speed(S#storage.write_speed)])
+      end,S0),
+    io:format("\nChunks with bad ratio:\n", []),
+    No = lists:foldl(
+           fun(C, Acc) when C#chunk.ratio > length(C#chunk.storages) ->
+                   io:format("~s, ~p/~p\n",
+                             [C#chunk.id, length(C#chunk.storages), C#chunk.ratio]),
+                   Acc;
+              (_C, Acc) ->
+                   Acc+1
+           end,0,C0),
+    io:format("Chunks with ok ratio: ~B~n", [No]),
     0;
 handle_cmd(["stop"]) ->
     %% Spawn off to make sure rpc returns
@@ -107,3 +124,13 @@ usage() ->
 	       "   connect - connect to the friendfs daemon\n"
 	       "\n"
 	       "To mount a filesystem see 'friendfs'\n", []).
+
+speed(undefined) ->
+    "unknown";
+speed(Bps) when Bps > 1000000.0 ->
+    io_lib:format("~.2f Bb/s", [Bps / 1000000]);
+speed(Bps) when Bps > 1024.0 ->
+    io_lib:format("~.2f kb/s", [Bps / 1024]);
+speed(Bps) ->
+    io_lib:format("~.2f b/s", [Bps]).
+    

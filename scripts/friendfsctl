@@ -10,7 +10,9 @@ FRIENDFS_CONF=${FRIENDFS_CONF:-/etc/friendfs.conf}
 if [ ! -f ${FRIENDFS_CONF} ]; then
     FRIENDFS_CONF=$HOME/.friendfs.conf
 fi
-[ ! -f ${FRIENDFS_CONF} ] || cp $ROOTDIR/friendfs/doc/friendfs.conf.example $FRIENDFS_CONF
+if [ ! -f ${FRIENDFS_CONF} ]; then 
+    cp $ROOTDIR/friendfs/doc/friendfs.conf.example $FRIENDFS_CONF
+fi
 
 START_ERL="$ROOTDIR/bin/start_erl $ROOTDIR $RELDIR $RELDIR/start_erl.data -pa $ROOTDIR/patches/"
 RUN_ERL="$ROOTDIR/bin/run_erl -daemon $ROOTDIR/pipes/ $ROOTDIR/log " 

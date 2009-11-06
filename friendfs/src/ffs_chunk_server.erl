@@ -348,11 +348,8 @@ handle_call({ register_chunk, ChunkId, Ratio, _FsName}, _From, State) ->
     {reply, Res, State};
 
 handle_call( info, _From, State) ->
-    Res = {{storages,
-            [{S#storage.pid, S#storage.url} || S <- ets:tab2list(storages)]},
-           {chunks,
-            [{C#chunk.id, C#chunk.storages, C#chunk.ref_cnt, C#chunk.ratio} || C <- ets:tab2list(chunks)]}
-          },
+    Res = {{storages, ets:tab2list(storages)},
+           {chunks, ets:tab2list(chunks)}},
     {reply, Res, State};
 
 handle_call(_Request, _From, State) ->
@@ -372,7 +369,9 @@ handle_call(_Request, _From, State) ->
 handle_cast({ read_callback, Ref, {ok, Speed}}, State) ->
     % Stop timer
     stop_timer(Ref, State),
-    ?DBG("Read with ~pb/s", [Speed]),
+    ?DBG("Read with ~pb/s\n", [Speed]),
+    Pid = get_storage(Ref, State),
+    update_speed(read, Speed, Pid),
     {noreply, remove_session(Ref, State)};
 
 handle_cast({ read_callback, Ref, {error, _Err}}, State) ->
@@ -403,11 +402,12 @@ handle_cast({ read_callback, Ref, {error, _Err}}, State) ->
 handle_cast({ write_callback, Ref, {ok, Speed}}, State) ->
     % Stop timer
     stop_timer(Ref, State),
-    ?DBG("Write: ~pb/s", [Speed]),
+    ?DBG("Write: ~pb/s\n", [Speed]),
     ChunkId = get_chunkid(Ref, State),
     Pid = get_storage(Ref, State),
     ets:update_element(chunks, ChunkId,
 		       {#chunk.storages, [Pid]}),
+    update_speed(write, Speed, Pid),
     ffs_chunk_replicator:refresh(),
     {noreply, remove_session(Ref, State)};
 
@@ -712,3 +712,25 @@ select_write_storage(Storages) ->
 
 connected_storages_int() ->
     ets:tab2list(storages).
+
+update_speed(write, Speed, Pid) ->
+    case ets:match_object(storages, #storage{pid=Pid, _='_'}) of
+        [S = #storage{url=Url}] -> 
+            ets:update_element(storages, Url,
+                               {#storage.write_speed, Speed});
+        [] ->
+            % Storage not connected
+            ok
+    end;
+update_speed(read, Speed, Pid) ->
+    case ets:match_object(storages, #storage{pid=Pid, _='_'}) of
+        [S = #storage{url=Url}] -> 
+            ets:update_element(storages, Url,
+                               {#storage.read_speed, Speed});
+        [] ->
+            % Storage not connected
+            ok
+    end.
+    
+
+    

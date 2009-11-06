@@ -36,8 +36,6 @@
 
 -include_lib("friendfs/include/friendfs.hrl").
 
--define(COUNTER_TABLE, ffs_fat_counter).
-
 -ifdef(TEST).
 -include("ffs_fat.hrl").
 -endif.
@@ -75,16 +73,7 @@
 init(Name) ->
     init(Name,-1,-1,?U bor ?G_X bor ?G_R bor ?O_X bor ?O_R).
 init(Name,Uid,Gid,Mode) ->
-    ets:insert(?COUNTER_TABLE,{Name,0}),
-	AName = list_to_atom(Name),
-    Tid = #ffs_tid{ 
-      name = Name,
-      inode = ets:new(AName,[{keypos,#ffs_inode.inode},public,set]),
-      link = ets:new(AName,[{keypos,#ffs_link.from},public,bag]),
-      xattr = ets:new(AName,[{keypos,#ffs_xattr.inode},public,set]),
-      config = [{chunkid_mfa,{ffs_lib,get_chunkid}}]},
-    create(Tid,1,"..",Uid,Gid,?D bor Mode,0,0),
-    Tid.
+    ffs_fat_store:new(Name).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -111,10 +100,10 @@ init_counters() ->
 %%      Mode = integer()
 %% @end
 %%--------------------------------------------------------------------
-make_dir(Tid, Parent, Name, Uid, Gid, Mode) -> 
+make_dir(Ctx, Parent, Name, Uid, Gid, Mode) -> 
     
-    Inode = create(Tid,Parent,Name,Uid,Gid,Mode bor ?D,0,4096),
-    ln(Tid,Inode#ffs_inode.inode,Parent,"..",hard),
+    Inode = create(Ctx,Parent,Name,Uid,Gid,Mode bor ?D,0,4096),
+    ln(Ctx,Inode#ffs_inode.inode,Parent,"..",hard),
     
     Inode.
 
@@ -134,9 +123,9 @@ make_dir(Tid, Parent, Name, Uid, Gid, Mode) ->
 %%      Size = integer()
 %% @end
 %%--------------------------------------------------------------------
-create(#ffs_tid{ inode = InodeTid, xattr = XattrTid} = Tid,
-       Parent, Name, Uid, Gid, Mode, Hash, Size) ->
-    NewInodeI = ets:update_counter(?COUNTER_TABLE,Tid#ffs_tid.name,1),
+create(Ctx, Parent, Name, Uid, Gid, Mode, Hash, Size) ->
+    NewInodeI = ffs_fat_store:get_new_inode(Ctx),
+
     Timestamp = now(),
     if
 	?D band Mode =/= 0 ->
@@ -156,9 +145,8 @@ create(#ffs_tid{ inode = InodeTid, xattr = XattrTid} = Tid,
       mtime = Timestamp,
       refcount = 0
      },
-    ets:insert(InodeTid,NewInode),
-    ln(Tid,Parent,NewInodeI,Name,hard),
-    ets:insert(XattrTid,#ffs_xattr{inode = NewInodeI}),
+    ffs_fat_store:add_node(Ctx, NewInode, #ffs_xattr{inode = NewInodeI}),
+    ln(Ctx,Parent,NewInodeI,Name,hard),
     lookup(Tid,NewInodeI).
 
 %%--------------------------------------------------------------------
@@ -171,8 +159,8 @@ create(#ffs_tid{ inode = InodeTid, xattr = XattrTid} = Tid,
 %%      InodeI = inodei()
 %% @end
 %%--------------------------------------------------------------------
-lookup(#ffs_tid{ inode = InodeTid },InodeI) -> 
-    case ets:lookup(InodeTid,InodeI) of
+lookup(Ctx,InodeI) -> 
+    case ffs_fat_store:lookup_inode(Ctx, InodeI) of
 	[] ->
 	    enoent;
 	[Inode] ->
@@ -190,19 +178,19 @@ lookup(#ffs_tid{ inode = InodeTid },InodeI) ->
 %%      Path = string()
 %% @end
 %%--------------------------------------------------------------------
-find(Tid,_Inode,[$/|Path]) ->
-    find(Tid,1,Path);
-find(Tid,Inode,Path) when is_integer(hd(Path)) ->
-    find(Tid,Inode,string:tokens(Path,"/"));
-find(#ffs_tid{ link = LinkTid } = Tid,Inode,[Name|Path]) -> 
-    Links = ets:lookup(LinkTid,Inode),
+find(Ctx,_Inode,[$/|Path]) ->
+    find(Ctx,1,Path);
+find(Ctx,Inode,Path) when is_integer(hd(Path)) ->
+    find(Ctx,Inode,string:tokens(Path,"/"));
+find(Ctx,Inode,[Name|Path]) -> 
+    Links = ffs_fat_store:lookup_link(Ctx, Inode),
     case lists:keyfind(Name,#ffs_link.name,Links) of
 	false ->
 	    {error,enoent};
 	#ffs_link{ to = Next } ->
-	    find(Tid,Next,Path)
+	    find(Ctx,Next,Path)
     end;
-find(_Tid, Inode, []) ->
+find(_Ctx, Inode, []) ->
     Inode.
 
 %%--------------------------------------------------------------------
@@ -216,7 +204,7 @@ find(_Tid, Inode, []) ->
 %% @end
 %%--------------------------------------------------------------------
 list(#ffs_tid{ link = LinkTid },InodeI) -> 
-    Links = ets:lookup(LinkTid,InodeI),
+    Links = ffs_fat_store:lookup_links(LinkTid,InodeI),
     [#ffs_link{ to = InodeI, from = InodeI, name = ".", type = hard} | Links].
 
 %%--------------------------------------------------------------------
