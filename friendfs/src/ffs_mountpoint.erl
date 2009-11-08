@@ -112,41 +112,41 @@ access_async(Ctx,InodeI,Mask,State) ->
 	_Inode when Mask == ?F_OK ->
 	    #fuse_reply_err{err=ok};
 	Inode ->
-	    Uid = get_uid(Inode#ffs_inode.uid,State),
-	    Gid = get_gid(Inode#ffs_inode.gid,State),
-	    UpdateInode = Inode#ffs_inode{ uid = Uid,
+	    Uid = get_uid(Inode#ffs_fs_inode.uid,State),
+	    Gid = get_gid(Inode#ffs_fs_inode.gid,State),
+	    UpdateInode = Inode#ffs_fs_inode{ uid = Uid,
 					   gid = Gid },
 	    #fuse_reply_err{err=get_access(Ctx,Mask,UpdateInode)}
     end.
 
 %% Check rights for owner
-get_access(#fuse_ctx{ uid = Uid },?X_OK,#ffs_inode{ uid = Uid , mode = Mask }) 
+get_access(#fuse_ctx{ uid = Uid },?X_OK,#ffs_fs_inode{ uid = Uid , mode = Mask }) 
   when (Mask band ?U_X) =/= 0 ->
     ok;
-get_access(#fuse_ctx{ uid = Uid },?R_OK,#ffs_inode{ uid = Uid , mode = Mask }) 
+get_access(#fuse_ctx{ uid = Uid },?R_OK,#ffs_fs_inode{ uid = Uid , mode = Mask }) 
   when (Mask band ?U_R) =/= 0 ->
     ok;
-get_access(#fuse_ctx{ uid = Uid },?W_OK,#ffs_inode{ uid = Uid , mode = Mask }) 
+get_access(#fuse_ctx{ uid = Uid },?W_OK,#ffs_fs_inode{ uid = Uid , mode = Mask }) 
   when (Mask band ?U_W) =/= 0 ->
     ok;
 %% Check rights for group
-get_access(#fuse_ctx{ gid = Gid },?X_OK,#ffs_inode{ gid = Gid , mode = Mask }) 
+get_access(#fuse_ctx{ gid = Gid },?X_OK,#ffs_fs_inode{ gid = Gid , mode = Mask }) 
   when (Mask band ?G_X) =/= 0 ->
     ok;
-get_access(#fuse_ctx{ gid = Gid },?R_OK,#ffs_inode{ gid = Gid , mode = Mask }) 
+get_access(#fuse_ctx{ gid = Gid },?R_OK,#ffs_fs_inode{ gid = Gid , mode = Mask }) 
   when (Mask band ?G_R) =/= 0 ->
     ok;
-get_access(#fuse_ctx{ gid = Gid },?W_OK,#ffs_inode{ gid = Gid , mode = Mask }) 
+get_access(#fuse_ctx{ gid = Gid },?W_OK,#ffs_fs_inode{ gid = Gid , mode = Mask }) 
   when (Mask band ?G_W) =/= 0 ->
     ok;
 %% Check rights for Others
-get_access(#fuse_ctx{ },?X_OK,#ffs_inode{ mode = Mask }) 
+get_access(#fuse_ctx{ },?X_OK,#ffs_fs_inode{ mode = Mask }) 
   when (Mask band ?O_X) =/= 0 ->
     ok;
-get_access(#fuse_ctx{ },?R_OK,#ffs_inode{ mode = Mask }) 
+get_access(#fuse_ctx{ },?R_OK,#ffs_fs_inode{ mode = Mask }) 
   when (Mask band ?O_R) =/= 0 ->
     ok;
-get_access(#fuse_ctx{ },?W_OK,#ffs_inode{ mode = Mask }) 
+get_access(#fuse_ctx{ },?W_OK,#ffs_fs_inode{ mode = Mask }) 
   when (Mask band ?O_W) =/= 0 ->
     ok;
 get_access(_,_,_) ->
@@ -850,14 +850,14 @@ async(Fun,Cont,State) ->
     {noreply,State}.
 	
 	
-inode_to_param(#ffs_inode{inode = InodeI} = Inode,State) ->
+inode_to_param(#ffs_fs_inode{inode = InodeI} = Inode,State) ->
     #fuse_entry_param{ ino = InodeI,
 		       generation = 0,%element(3,now()),
 		       attr = stat(Inode,State),
 		       attr_timeout_ms = 100,
 		       entry_timeout_ms = 100}.
 
-stat(#ffs_inode{ inode = Inode, gid = Gid, uid = Uid,
+stat(#ffs_fs_inode{ inode = Inode, gid = Gid, uid = Uid,
 		 atime = Atime, mtime = Mtime,
 		 ctime = Ctime, refcount = Links,
 		 size = Size, mode = Mode },State )  ->

@@ -3,7 +3,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--record(ffs_inode,{
+-record(ffs_fs_inode,{
 	  inode,              %% int(): The inode number, unique per filesystem.
 	  hash,               %% int(): A hash of the contents of the node
 	  size,               %% int(): The size of the contents of this node
@@ -20,20 +20,20 @@
 	  write_cache         %% {chunkid,bin()}: The current write cache
 	 }).
 
--record(ffs_link,{
+-record(ffs_fs_link,{
 	  from,     %% int(): The inode directory from which this link comes.
 	  to,       %% int(): The inode to which this link points.
 	  name,     %% str(): The name of this link
 	  type      %% atom(): What type of link this is, i.e. soft or hard
 	 }).
 
--record(ffs_xattr,{
+-record(ffs_fs_xattr,{
 	  inode,    %% int(): The inode for which these attributes apply
 	  attr      %% list(): A {key,value} tuple list containing extra
 	            %% information about each inode.
 	 }).
 
--record(ffs_tid,{
+-record(ffs_fs_ctx,{
       name,     %% The name of this fat, used for the inode counter.
 	  inode,    %% Table ID of the inode ets table
 	  link,     %% Table ID of the link ets table
@@ -41,7 +41,7 @@
 	  config    %% Configuration for the fat
 	 }).
 
--record(ffs_chunk,{
+-record(ffs_fs_chunk,{
 	  id,       %% The place and id of this chunk within a inode
 	  size,     %% The size of this chunk
 	  chunkid   %% The chunkid of this chunk used by the ffs_chunk_server
