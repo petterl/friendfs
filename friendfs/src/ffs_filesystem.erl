@@ -15,6 +15,7 @@
 
 %% Filesystem API
 -export([init/1,
+	 stop/1,
 	 list/2,
 	 read/4,
 	 write/4,
@@ -362,6 +363,9 @@ init(Name) ->
 		       ffs_lib:get_value(mode,Config)),
     ffs_config:write({fs_tid, Name}, Tid), 
     ok.
+
+stop(Name) ->
+    ffs_fat:stop(Name).
 
 %%%===================================================================
 %%% Internal functions

@@ -106,5 +106,7 @@ stop () ->
 %% @hidden
 
 stop(_State) ->
-  ok.
+    lists:foreach(fun({{"Filesystem",Name},_Args}) ->
+			  ffs_filesystem:stop(Name)
+		  end, ffs_config:get_filesystems()).
 

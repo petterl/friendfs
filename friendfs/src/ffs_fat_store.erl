@@ -8,7 +8,8 @@
 -module(ffs_fat_store).
 
 %% API
--export([new/1,
+-export([init/1,
+	 stop/1,
 	 get_new_inode/1,
 	 store_inode/2,
 	 lookup_inode/2,
@@ -41,7 +42,7 @@
 %%     Name = atom()
 %% @end
 %%--------------------------------------------------------------------
-new(Name) ->
+init(Name) ->
     case ets:info(?COUNTER_TABLE) of
 	undefined ->
 	    ets:new(?COUNTER_TABLE,[public,named_table,{keypos,1},set]);
@@ -50,36 +51,49 @@ new(Name) ->
     end,
 
     ets:insert(?COUNTER_TABLE,{Name,0}),
-    AName = list_to_atom(Name),
+    dets:open_file(list_to_atom(Name++"I"),
+		   [{file, "./"++Name++"I"},
+		    {keypos,#ffs_inode.inode},{type, set}]),
+    dets:open_file(list_to_atom(Name++"L"),
+		   [{file, "./"++Name++"L"},
+		    {keypos,#ffs_link.from},{type, bag}]),
+    dets:open_file(list_to_atom(Name++"X"),
+		   [{file, "./"++Name++"X"},
+		    {keypos,#ffs_xattr.inode},{type, set}]),
     Ctx = #ffs_tid{ 
       name = Name,
-      inode = ets:new(AName,[{keypos,#ffs_inode.inode},public,set]),
-      link = ets:new(AName,[{keypos,#ffs_link.from},public,bag]),
-      xattr = ets:new(AName,[{keypos,#ffs_xattr.inode},public,set]),
+      inode = list_to_atom(Name++"I"),
+      link = list_to_atom(Name++"L"),
+      xattr = list_to_atom(Name++"X"),
       config = [{chunkid_mfa,{ffs_lib,get_chunkid}}]},
     Ctx.
+
+stop(#ffs_tid{name = Name}) ->
+      dets:close(list_to_atom(Name++"I")),
+      dets:close(list_to_atom(Name++"L")),
+      dets:close(list_to_atom(Name++"X")).
 
 get_new_inode(#ffs_tid{ name = Name}) ->
     ets:update_counter(?COUNTER_TABLE,Name,1).
 
 store_inode(#ffs_tid{ inode = InodeTid}, Inode) ->
-    ets:insert(InodeTid,Inode).
+    dets:insert(InodeTid,Inode).
 
 lookup_inode(#ffs_tid{ inode = InodeTid}, InodeI) ->
-    ets:lookup(InodeTid, InodeI).
+    dets:lookup(InodeTid, InodeI).
 
 delete_inode(#ffs_tid{ inode = InodeTid}, InodeI) ->
-    ets:delete(InodeTid,InodeI).
+    dets:delete(InodeTid,InodeI).
 
 
 store_xattr(#ffs_tid{xattr = XattrTid}, Xattr) ->
-    ets:insert(XattrTid,Xattr).
+    dets:insert(XattrTid,Xattr).
     
 store_xattr(#ffs_tid{xattr = _XattrTid}, _InodeI, _Key, _Value) ->
     enoent.
     
 lookup_xattr(#ffs_tid{xattr = XattrTid}, InodeI) ->
-    ets:lookup(XattrTid, InodeI).    
+    dets:lookup(XattrTid, InodeI).    
 
 lookup_xattr(#ffs_tid{xattr = _XattrTid}, _InodeI, _Key) ->
     enoent.
@@ -89,11 +103,11 @@ delete_xattr(#ffs_tid{ xattr = _XattrTid}, _Key) ->
 
 
 store_link(#ffs_tid{ link = LinkTid}, Link) ->
-    ets:insert(LinkTid, Link).
+    dets:insert(LinkTid, Link).
 
 lookup_links(#ffs_tid{ link = LinkTid}, InodeI) ->
-    ets:lookup(LinkTid, InodeI).
+    dets:lookup(LinkTid, InodeI).
 
 delete_link(#ffs_tid{ link = LinkTid }, Link) ->
-    ets:delete_object(LinkTid,Link).
+    dets:delete_object(LinkTid,Link).
 
