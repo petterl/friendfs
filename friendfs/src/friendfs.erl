@@ -86,7 +86,6 @@ start(Other,_Type,_Args) ->
     {ok,self()}.
 
 init_filesystems() ->
-    ffs_fat:init_counters(),
     lists:foreach(fun({{"Filesystem",Name},_Args}) ->
 			  ffs_filesystem:init(Name)
 		  end, ffs_config:get_filesystems()).
