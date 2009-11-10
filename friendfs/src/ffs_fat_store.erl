@@ -80,8 +80,8 @@ stop(#ffs_fs_ctx{name = Name}) ->
 %% @doc
 %%
 %% @spec get_new_inode_num(Ctx) -> integer()
-%%     Ctx = ffs_fs_ctx{}
-%% @en
+%%     Ctx = ffs_fs_ctx()
+%% @end
 %%--------------------------------------------------------------------
 get_new_inode_num(#ffs_fs_ctx{ name = Name}) ->
     ets:update_counter(?COUNTER_TABLE,Name,1).
@@ -99,20 +99,44 @@ delete_inode(#ffs_fs_ctx{ inode = InodeTid}, InodeI) ->
 store_xattr(#ffs_fs_ctx{xattr = XattrTid}, Xattr) ->
     dets:insert(XattrTid,Xattr).
     
-store_xattr(#ffs_fs_ctx{xattr = _XattrTid}, _InodeI, _Key, _Value) ->
-    enoent.
+store_xattr(#ffs_fs_ctx{xattr = XattrTid}, InodeI, Key, Value) ->
+    case dets:lookup(XattrTid, InodeI) of
+        {error, _} -> {error, not_found};
+        #ffs_fs_xattr{attr = L} ->
+            L2 = lists:keystore(Key, 1, L, {Key, Value}),
+            dets:insert(XattrTid, X#ffs_fs_xattr{attr = L2})
+    end.
     
 lookup_xattr(#ffs_fs_ctx{xattr = XattrTid}, InodeI) ->
-    dets:lookup(XattrTid, InodeI).    
+    case dets:lookup(XattrTid, InodeI) of
+        {error, _} -> {error, not_found};
+        #ffs_fs_xattr{attr = L} -> L
+    end.
 
-lookup_xattr(#ffs_fs_ctx{xattr = _XattrTid}, _InodeI, _Key) ->
-    enoent.
+lookup_xattr(#ffs_fs_ctx{xattr = _XattrTid}, InodeI, Key) ->
+    case dets:lookup(XattrTid, InodeI) of
+        {error, _} -> {error, not_found};
+        #ffs_fs_xattr{attr = L} ->
+            case lists:keysearch(Key, 1, L) of
+                {value, Value} -> Value;
+                false -> {error, not_found}
+            end
+    end.
 
 delete_xattr(#ffs_fs_ctx{ xattr = XattrTid}, InodeI) ->
     dets:delete(XattrTid,InodeI).
 
-delete_xattr(#ffs_fs_ctx{ xattr = _XattrTid}, _InodeI, _Key) ->
-    enoent.
+delete_xattr(#ffs_fs_ctx{ xattr = XattrTid}, InodeI, Key) ->
+    case dets:lookup(XattrTid, InodeI) of
+        {error, _} -> {error, not_found};
+        #ffs_fs_xattr{attr = L} ->
+            case lists:keytake(Key, 1, L) of
+                {value, _, L2} ->
+                    dets:insert(XattrTid, X#ffs_fs_xattr{attr = L2});
+                false ->
+                    {error, not_found}
+            end
+    end.
 
 store_link(#ffs_fs_ctx{ link = LinkTid}, Link) ->
     dets:insert(LinkTid, Link).

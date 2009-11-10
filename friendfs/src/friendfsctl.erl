@@ -30,10 +30,12 @@
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Run command
-%%
-%% @spec
-%%   cmd() -> ok
+%% Run command. function will never return, it will always run
+%% halt(Num) as last action. Whwere Num will be the returned error code.
+%% 
+%% 
+%% @spec cmd(Cmd) -> void()
+%%     Cmd = [string()]
 %% @end
 %%--------------------------------------------------------------------
 

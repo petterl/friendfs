@@ -715,7 +715,7 @@ connected_storages_int() ->
 
 update_speed(write, Speed, Pid) ->
     case ets:match_object(storages, #storage{pid=Pid, _='_'}) of
-        [S = #storage{url=Url}] -> 
+        [#storage{url=Url}] -> 
             ets:update_element(storages, Url,
                                {#storage.write_speed, Speed});
         [] ->
@@ -724,7 +724,7 @@ update_speed(write, Speed, Pid) ->
     end;
 update_speed(read, Speed, Pid) ->
     case ets:match_object(storages, #storage{pid=Pid, _='_'}) of
-        [S = #storage{url=Url}] -> 
+        [#storage{url=Url}] -> 
             ets:update_element(storages, Url,
                                {#storage.read_speed, Speed});
         [] ->
