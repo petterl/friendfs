@@ -14,7 +14,6 @@
 	 store_inode/2,
 	 lookup_inode/2,
 	 delete_inode/2,
-	 store_xattr/2,
 	 store_xattr/4,
 	 lookup_xattr/2,
 	 lookup_xattr/3,
@@ -34,14 +33,22 @@
 -endif.
 
 %%====================================================================
+%% Typedefs
+%%====================================================================
+%% @type ffs_fs_ctx() = #ffs_fs_ctx{}. 
+%%     Contains information needed by the fs store
+%% @end
+%%
+
+%%====================================================================
 %% API
 %%====================================================================
 %%--------------------------------------------------------------------
 %% @doc
 %%
-%% @spec init(Name,Config) -> ffs_fat_ctx()
+%% @spec init(Name, Config) -> ffs_fat_ctx()
 %%     Name = atom()
-%%     Config = term()
+%%     Config = [term()]
 %% @end
 %%--------------------------------------------------------------------
 init(Name, Config) ->
@@ -61,7 +68,7 @@ init(Name, Config) ->
 		    {keypos,#ffs_fs_link.from},{type, bag}]),
     dets:open_file(list_to_atom(Name++"X"),
 		   [{file, "./"++Name++"X"},
-		    {keypos,#ffs_fs_xattr.inode},{type, set}]),
+		    {keypos,#ffs_fs_xattr.inode},{type, bag}]),
     Ctx = #ffs_fs_ctx{ 
       name = Name,
       inode = list_to_atom(Name++"I"),
@@ -78,6 +85,7 @@ stop(#ffs_fs_ctx{name = Name}) ->
 
 %%--------------------------------------------------------------------
 %% @doc
+%% Get next free inode number in filesystem
 %%
 %% @spec get_new_inode_num(Ctx) -> integer()
 %%     Ctx = ffs_fs_ctx()
@@ -86,63 +94,153 @@ stop(#ffs_fs_ctx{name = Name}) ->
 get_new_inode_num(#ffs_fs_ctx{ name = Name}) ->
     ets:update_counter(?COUNTER_TABLE,Name,1).
 
-store_inode(#ffs_fs_ctx{ inode = InodeTid}, Inode) ->
+%%--------------------------------------------------------------------
+%% @doc
+%% Store the inode information
+%%
+%% @spec store_inode(Ctx, Inode) -> ok
+%%     Ctx = ffs_fs_ctx()
+%% @end
+%%--------------------------------------------------------------------
+store_inode(#ffs_fs_ctx{ inode = InodeTid}, Inode = #ffs_fs_inode{}) ->
     dets:insert(InodeTid,Inode).
 
-lookup_inode(#ffs_fs_ctx{ inode = InodeTid}, InodeI) ->
-    dets:lookup(InodeTid, InodeI).
-
-delete_inode(#ffs_fs_ctx{ inode = InodeTid}, InodeI) ->
-    dets:delete(InodeTid,InodeI).
-
-
-store_xattr(#ffs_fs_ctx{xattr = XattrTid}, Xattr) ->
-    dets:insert(XattrTid,Xattr).
-    
-store_xattr(#ffs_fs_ctx{xattr = XattrTid}, InodeI, Key, Value) ->
-    case dets:lookup(XattrTid, InodeI) of
-        {error, _} -> {error, not_found};
-        #ffs_fs_xattr{attr = L} ->
-            L2 = lists:keystore(Key, 1, L, {Key, Value}),
-            dets:insert(XattrTid, X#ffs_fs_xattr{attr = L2})
-    end.
-    
-lookup_xattr(#ffs_fs_ctx{xattr = XattrTid}, InodeI) ->
-    case dets:lookup(XattrTid, InodeI) of
-        {error, _} -> {error, not_found};
-        #ffs_fs_xattr{attr = L} -> L
+%%--------------------------------------------------------------------
+%% @doc
+%% Lookup inode information
+%%
+%% @spec lookup_inode(Ctx, InodeId) -> Inode | {error, not_found}
+%%     Ctx = ffs_fs_ctx()
+%%     InodeId = integer()
+%% @end
+%%--------------------------------------------------------------------
+lookup_inode(#ffs_fs_ctx{ inode = InodeTid}, InodeId) ->
+    case dets:lookup(InodeTid, InodeId) of
+        [] ->
+            {error, not_found};
+        [Object] ->
+            Object
     end.
 
-lookup_xattr(#ffs_fs_ctx{xattr = _XattrTid}, InodeI, Key) ->
-    case dets:lookup(XattrTid, InodeI) of
-        {error, _} -> {error, not_found};
-        #ffs_fs_xattr{attr = L} ->
-            case lists:keysearch(Key, 1, L) of
-                {value, Value} -> Value;
-                false -> {error, not_found}
-            end
+%%--------------------------------------------------------------------
+%% @doc
+%% Delete inode
+%%
+%% @spec delete_inode(Ctx, InodeId) -> ok | {error, not_found}
+%%     Ctx = ffs_fs_ctx()
+%%     InodeId = integer()
+%% @end
+%%--------------------------------------------------------------------
+delete_inode(#ffs_fs_ctx{ inode = InodeTid}, InodeId) ->
+    case dets:delete(InodeTid, InodeId) of
+        {error, _} ->
+            {error, not_found};
+        ok -> ok
     end.
 
-delete_xattr(#ffs_fs_ctx{ xattr = XattrTid}, InodeI) ->
-    dets:delete(XattrTid,InodeI).
+%%--------------------------------------------------------------------
+%% @doc
+%% Store the Value under Key for this inode information,
+%%
+%% @spec store_inode(Ctx, InodeId, Key, Value) -> ok
+%%     Ctx = ffs_fs_ctx()
+%%     InodeId = integer()
+%% @end
+%%--------------------------------------------------------------------
+store_xattr(#ffs_fs_ctx{xattr = XattrTid}, InodeId, Key, Value) ->
+    dets:match_delete(XattrTid, #ffs_fs_xattr{inode=InodeId,
+                                              key=Key,_='_'}),
+    dets:insert(XattrTid, #ffs_fs_xattr{inode=InodeId,
+                                        key=Key, value=Value}).
 
-delete_xattr(#ffs_fs_ctx{ xattr = XattrTid}, InodeI, Key) ->
-    case dets:lookup(XattrTid, InodeI) of
-        {error, _} -> {error, not_found};
-        #ffs_fs_xattr{attr = L} ->
-            case lists:keytake(Key, 1, L) of
-                {value, _, L2} ->
-                    dets:insert(XattrTid, X#ffs_fs_xattr{attr = L2});
-                false ->
-                    {error, not_found}
-            end
+%%--------------------------------------------------------------------
+%% @doc
+%% Lookup all xattr information for this inode
+%%
+%% @spec lookup_xattr(Ctx, InodeId) -> [{Key, Value}] | []
+%%     Ctx = ffs_fs_ctx()
+%%     InodeId = integer()
+%% @end
+%%--------------------------------------------------------------------
+lookup_xattr(#ffs_fs_ctx{xattr = XattrTid}, InodeId) ->
+    dets:lookup(XattrTid, InodeId).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Lookup the value of Key in Xattr for this inode
+%%
+%% @spec lookup_xattr(Ctx, InodeId, Key) -> Value | {error, not_found}
+%%     Ctx = ffs_fs_ctx()
+%%     InodeId = integer()
+%% @end
+%%--------------------------------------------------------------------
+lookup_xattr(#ffs_fs_ctx{xattr = XattrTid}, InodeId, Key) ->
+    case dets:match(XattrTid, #ffs_fs_xattr{inode=InodeId,
+                                            key=Key, value='$1',
+                                            _='_'}) of
+        [] ->
+            {error, not_found};
+        [[Value]] ->
+            Value
     end.
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Remove a specific xattr key
+%%
+%% @spec delete_xattr(Ctx, InodeId, Key) -> ok 
+%%     Ctx = ffs_fs_ctx()
+%%     InodeId = integer()
+%% @end
+%%--------------------------------------------------------------------
+delete_xattr(#ffs_fs_ctx{ xattr = XattrTid}, InodeId, Key) ->
+    dets:match_delete(XattrTid, #ffs_fs_xattr{inode=InodeId,
+                                              key=Key,_='_'}).
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Remove all xattr for an inode
+%%
+%% @spec delete_xattr(Ctx, InodeId) -> ok 
+%%     Ctx = ffs_fs_ctx()
+%%     InodeId = integer()
+%% @end
+%%--------------------------------------------------------------------
+delete_xattr(#ffs_fs_ctx{ xattr = XattrTid}, InodeId) ->
+    dets:match_delete(XattrTid,#ffs_fs_xattr{inode=InodeId,_='_'}).
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Store a link
+%%
+%% @spec store_link(Ctx, Link) -> ok
+%%     Ctx = ffs_fs_ctx()
+%% @end
+%%--------------------------------------------------------------------
 store_link(#ffs_fs_ctx{ link = LinkTid}, Link) ->
     dets:insert(LinkTid, Link).
 
-lookup_links(#ffs_fs_ctx{ link = LinkTid}, InodeI) ->
-    dets:lookup(LinkTid, InodeI).
+%%--------------------------------------------------------------------
+%% @doc
+%% Lookup links
+%%
+%% @spec lookup_links(Ctx, InodeId) -> [Link] 
+%%     Ctx = ffs_fs_ctx()
+%%     InodeId = integer()
+%% @end
+%%--------------------------------------------------------------------
+lookup_links(#ffs_fs_ctx{ link = LinkTid}, InodeId) ->
+    dets:lookup(LinkTid, InodeId).
 
+%%--------------------------------------------------------------------
+%% @doc
+%% Remove a link
+%%
+%% @spec delete_link(Ctx, Link) -> ok 
+%%     Ctx = ffs_fs_ctx()
+%% @end
+%%--------------------------------------------------------------------
 delete_link(#ffs_fs_ctx{ link = LinkTid }, Link) ->
     dets:delete_object(LinkTid,Link).

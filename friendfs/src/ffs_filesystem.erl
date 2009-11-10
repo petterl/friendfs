@@ -249,7 +249,7 @@ delete(FsName, ParentI,Name) ->
     Ctx = ffs_config:read({fs_tid, FsName}),
     case ffs_fat:unlink(Ctx,ParentI,Name) of
 	{delete,Inode} ->
-	    [ffs_fs_chunk_server:delete(ChunkId) ||
+	    [ffs_chunk_server:delete(ChunkId) ||
 		ChunkId <- Inode#ffs_fs_inode.chunks];
 	_Else ->
 	    ok
@@ -372,7 +372,7 @@ stop(Name) ->
 store_chunk(Data,_Config) ->
     io:format("Storing data\n",[]),
     Ratio = 2,
-    ffs_fs_chunk_server:write(Data,Ratio).
+    ffs_chunk_server:write(Data,Ratio).
 
 delete_chunk(ChunkId,_Config) ->
 	io:format("Deleting ~p\n",[ChunkId]),
@@ -380,7 +380,7 @@ delete_chunk(ChunkId,_Config) ->
 
 read_chunks(Chunks) ->
     Data = ffs_lib:pmap(fun(#ffs_fs_chunk{ chunkid = ChunkId }) ->
-				ffs_fs_chunk_server:read(ChunkId)
+				ffs_chunk_server:read(ChunkId)
 			end,Chunks),
     read_chunks(Data,<<>>).
 

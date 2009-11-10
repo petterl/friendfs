@@ -28,9 +28,9 @@
 	 }).
 
 -record(ffs_fs_xattr,{
-	  inode,    %% int(): The inode for which these attributes apply
-	  attr      %% list(): A {key,value} tuple list containing extra
-	            %% information about each inode.
+          inode,    %% int(): The inode for which these attributes apply
+          key,
+          value
 	 }).
 
 -record(ffs_fs_ctx,{

@@ -43,7 +43,7 @@
 %% Typedefs
 %%====================================================================
 %% @type ffs_fs_ctx() = #ffs_fs_ctx{}. 
-%%     Contains information about which tables to use.
+%%     Contains information needed by the fs store
 %% @end
 %%
 %% @type ffs_fs_inode() = #ffs_fs_inode{}.
@@ -138,7 +138,6 @@ create(Ctx, Parent, Name, Uid, Gid, Mode, Hash, Size) ->
       refcount = 0
      },
     ffs_fat_store:store_inode(Ctx, NewInode),
-    ffs_fat_store:store_xattr(Ctx, #ffs_fs_xattr{inode = NewInodeI}),
     ln(Ctx,Parent,NewInodeI,Name,hard),
     lookup(Ctx,NewInodeI).
 
@@ -154,10 +153,8 @@ create(Ctx, Parent, Name, Uid, Gid, Mode, Hash, Size) ->
 %%--------------------------------------------------------------------
 lookup(Ctx,InodeI) -> 
     case ffs_fat_store:lookup_inode(Ctx, InodeI) of
-	[] ->
-	    enoent;
-	[Inode] ->
-	    Inode
+        {error, not_found} -> enoent;
+        Inode              -> Inode
     end.
 
 %%--------------------------------------------------------------------
@@ -171,20 +168,20 @@ lookup(Ctx,InodeI) ->
 %%      Path = string()
 %% @end
 %%--------------------------------------------------------------------
-find(Ctx,_Inode,[$/|Path]) ->
+find(Ctx,_InodeI,[$/|Path]) ->
     find(Ctx,1,Path);
-find(Ctx,Inode,Path) when is_integer(hd(Path)) ->
-    find(Ctx,Inode,string:tokens(Path,"/"));
-find(Ctx,Inode,[Name|Path]) -> 
-    Links = ffs_fat_store:lookup_links(Ctx, Inode),
+find(Ctx,InodeI,Path) when is_integer(hd(Path)) ->
+    find(Ctx,InodeI,string:tokens(Path,"/"));
+find(Ctx,InodeI,[Name|Path]) -> 
+    Links = ffs_fat_store:lookup_links(Ctx, InodeI),
     case lists:keyfind(Name,#ffs_fs_link.name,Links) of
-	false ->
-	    {error,enoent};
-	#ffs_fs_link{ to = Next } ->
-	    find(Ctx,Next,Path)
+        false ->
+            enoent;
+        #ffs_fs_link{ to = Next } ->
+            find(Ctx,Next,Path)
     end;
-find(_Ctx, Inode, []) ->
-    Inode.
+find(_Ctx, InodeI, []) ->
+    InodeI.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -251,15 +248,13 @@ unlink(Ctx, From, Path, ToInodeI) ->
 					      name = filename:basename(Path),
 					      type = hard }),
     case ToInode of
-	#ffs_fs_inode{ refcount = 1 } ->
-	    ffs_fat_store:delete_inode(Ctx, ToInodeI),
-	    {delete,ToInode};
-	#ffs_fs_inode{ refcount = Cnt } ->
-	    ffs_fat_store:store_inode(Ctx, 
-				      ToInode#ffs_fs_inode{refcount = Cnt-1}),
-	    {keep,ToInode};
-	enoent ->
-	    enoent
+        #ffs_fs_inode{ refcount = 1 } ->
+            ffs_fat_store:delete_inode(Ctx, ToInodeI),
+            {delete,ToInode};
+        #ffs_fs_inode{ refcount = Cnt } ->
+            ffs_fat_store:store_inode(Ctx, 
+                                      ToInode#ffs_fs_inode{refcount = Cnt-1}),
+            {keep,ToInode}
     end.
 
 %%--------------------------------------------------------------------
@@ -407,7 +402,11 @@ modify(Ctx, InodeI, NewHash, NewSize) ->
 %% @end
 %%--------------------------------------------------------------------
 list_xattr(Ctx, InodeI) ->
-    ffs_fat_store:lookup_xattr(Ctx, InodeI).
+    case lookup(Ctx, InodeI) of
+        enoent -> enoent;
+        _ ->
+            ffs_fat_store:lookup_xattr(Ctx, InodeI)
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -422,7 +421,11 @@ list_xattr(Ctx, InodeI) ->
 %% @end
 %%--------------------------------------------------------------------
 get_xattr(Ctx, InodeI, Key) ->
-    ffs_fat_store:lookup_xattr(Ctx, InodeI, Key).
+    case lookup(Ctx, InodeI) of
+        enoent -> enoent;
+        _ ->
+            ffs_fat_store:lookup_xattr(Ctx, InodeI, Key)
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -437,7 +440,11 @@ get_xattr(Ctx, InodeI, Key) ->
 %% @end
 %%--------------------------------------------------------------------
 set_xattr(Ctx, InodeI, Key, Value) ->
-    ffs_fat_store:store_xattr(Ctx, InodeI, Key, Value).
+    case lookup(Ctx, InodeI) of
+        enoent -> enoent;
+        _ ->
+            ffs_fat_store:store_xattr(Ctx, InodeI, Key, Value)
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -451,14 +458,18 @@ set_xattr(Ctx, InodeI, Key, Value) ->
 %% @end
 %%--------------------------------------------------------------------
 delete_xattr(Ctx, InodeI, Key) ->
-    ffs_fat_store:delete_xattr(Ctx, InodeI, Key).
+    case lookup(Ctx, InodeI) of
+        enoent -> enoent;
+        _ ->
+            ffs_fat_store:delete_xattr(Ctx, InodeI, Key)
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc
 %% Description
 %%
 %% @spec
-%%   write_cache(Ctx,InodeI,Chunk) -> ok | enoent
+%%   write_cache(Ctx,InodeI,Chunk) -> ok
 %%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %%      Chunk = {Id, Data}
