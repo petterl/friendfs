@@ -41,7 +41,7 @@
 %% @end
 %%--------------------------------------------------------------------
 list(FsName,INodeI) ->
-    Ctx = ffs_config:read({fs_tid, FsName}),
+    Ctx = ffs_config:read({fs_ctx, FsName}),
     Links = ffs_fat:list(Ctx, INodeI),
     lists:map(fun(#ffs_fs_link{ name = Name, to = To }) ->
 		      {Name,ffs_fat:lookup(Ctx, To)}
@@ -56,7 +56,7 @@ list(FsName,INodeI) ->
 %% @end
 %%--------------------------------------------------------------------
 read(FsName, InodeI, Size, Offset) ->
-    Ctx = ffs_config:read({fs_tid, FsName}),
+    Ctx = ffs_config:read({fs_ctx, FsName}),
     {NewOffset,Chunks} = ffs_fat:read(Ctx,InodeI,Size,Offset),
     case read_chunks(Chunks) of
 	<<_Head:NewOffset/binary,Data:Size/binary,_Rest/binary>> ->
@@ -74,7 +74,7 @@ read(FsName, InodeI, Size, Offset) ->
 %% @end
 %%--------------------------------------------------------------------
 write(FsName, InodeI, Data, Offset) ->
-    Ctx = ffs_config:read({fs_tid, FsName}),
+    Ctx = ffs_config:read({fs_ctx, FsName}),
     Config = ffs_config:read({fs_config, FsName}),
     case write_cache(Ctx, InodeI, Data, Offset, Config) of
 	[] ->
@@ -109,7 +109,7 @@ update_inode(Ctx,InodeI,ChunkPos,ChunkId,Size) ->
 %%
 %% @spec
 %%   write_cache(Ctx,InodeI,NewData,Offset,Config) -> [{chunk,ChunkId,Data}] | more
-%%      Ctx = ffs_tid()
+%%      Ctx = ffs_ctx()
 %%      InodeI = inodei()
 %%      NewData = binary()
 %%      Offset = integer()
@@ -196,7 +196,7 @@ get_chunkdata(_,_) ->
 %% @end
 %%--------------------------------------------------------------------
 flush(FsName, InodeI ) ->
-    Ctx = ffs_config:read({fs_tid, FsName}),
+    Ctx = ffs_config:read({fs_ctx, FsName}),
     Config = ffs_config:read({fs_config, FsName}),
     case flush_cache( Ctx, InodeI ) of
 	[] ->
@@ -211,12 +211,11 @@ flush(FsName, InodeI ) ->
 %%
 %% @spec
 %%   flush_cache(Ctx,InodeI) -> {chunk,ChunkId,Data} | empty
-%%      Ctx = ffs_tid()
+%%      Ctx = ffs_ctx()
 %%      InodeI = inodei()
 %% @end
 %%--------------------------------------------------------------------
 flush_cache(Ctx,InodeI) when is_integer(InodeI) ->
-	ffs_fat:flush_cache(Ctx,InodeI,undefined),
     flush_cache(Ctx,ffs_fat:lookup(Ctx,InodeI));
 flush_cache(_Ctx,#ffs_fs_inode{ write_cache = undefined }) ->
     [];
@@ -234,7 +233,7 @@ flush_cache(_Ctx,#ffs_fs_inode{ write_cache = {Chunk,Data} } ) ->
 %% @end
 %%--------------------------------------------------------------------
 create(FsName, ParentI, Name, Uid, Gid, Mode) ->
-    Ctx = ffs_config:read({fs_tid, FsName}),
+    Ctx = ffs_config:read({fs_ctx, FsName}),
     ffs_fat:create(Ctx,ParentI,Name,Uid,Gid,Mode,0,0).
 
 %%--------------------------------------------------------------------
@@ -246,7 +245,7 @@ create(FsName, ParentI, Name, Uid, Gid, Mode) ->
 %% @end
 %%--------------------------------------------------------------------
 delete(FsName, ParentI,Name) ->
-    Ctx = ffs_config:read({fs_tid, FsName}),
+    Ctx = ffs_config:read({fs_ctx, FsName}),
     case ffs_fat:unlink(Ctx,ParentI,Name) of
 	{delete,Inode} ->
 	    [ffs_chunk_server:delete(ChunkId) ||
@@ -265,7 +264,7 @@ delete(FsName, ParentI,Name) ->
 %% @end
 %%--------------------------------------------------------------------
 make_dir(FsName, ParentInodeI, Name, Mode) ->
-    Ctx = ffs_config:read({fs_tid, FsName}),
+    Ctx = ffs_config:read({fs_ctx, FsName}),
     Parent = ffs_fat:lookup(Ctx,ParentInodeI),
     
     #ffs_fs_inode{ gid = Gid, uid = Uid} = Parent,
@@ -282,7 +281,7 @@ make_dir(FsName, ParentInodeI, Name, Mode) ->
 %% @end
 %%--------------------------------------------------------------------
 lookup(FsName,InodeI) ->
-    Ctx = ffs_config:read({fs_tid, FsName}),
+    Ctx = ffs_config:read({fs_ctx, FsName}),
     ffs_fat:lookup(Ctx, InodeI).
 
 
@@ -295,7 +294,7 @@ lookup(FsName,InodeI) ->
 %% @end
 %%--------------------------------------------------------------------
 find(FsName,ParentInodeI,Path) ->
-    Ctx = ffs_config:read({fs_tid, FsName}),
+    Ctx = ffs_config:read({fs_ctx, FsName}),
     case ffs_fat:find(Ctx, ParentInodeI, Path) of
 	enoent -> enoent;
 	InodeI -> ffs_fat:lookup(Ctx, InodeI)
@@ -359,7 +358,7 @@ init(Name) ->
 		       ffs_lib:get_value(uid,Config),
 		       ffs_lib:get_value(gid,Config),
 		       ffs_lib:get_value(mode,Config)),
-    ffs_config:write({fs_tid, Name}, Ctx), 
+    ffs_config:write({fs_ctx, Name}, Ctx), 
     ok.
 
 stop(Name) ->
