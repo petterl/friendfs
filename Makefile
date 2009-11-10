@@ -93,7 +93,7 @@ releases/$(REL_VSN)/%.boot: $(APPNAME).script $(APPNAME).rel
 	mv $(subst script,boot,$<) $@
 
 
-%.script: %.rel
+%.script: %.rel $(APP_VSNS:%=lib/%/ebin/*.app) 
 	$(ERL) $(DIRS:%/src=-pz %/ebin) -noshell -s systools make_script $(basename $<) -s init stop
 
 .PHONY: force
@@ -114,7 +114,7 @@ $(APP_VSNS:%=lib/%):
 	(cd lib && ln -s $(shell escript $(RUNTIME) erl_root)$@)
 
 
-releases/$(REL_VSN)/sys.config: releases/$(REL_VSN) $(APPNAME).rel
+releases/$(REL_VSN)/sys.config: #releases/$(REL_VSN) $(APPNAME).rel
 	echo "[]." > $@
 
 releases/start_erl.data: $(APPNAME).rel
