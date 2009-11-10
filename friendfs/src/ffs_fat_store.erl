@@ -91,7 +91,7 @@ stop(#ffs_fs_ctx{name = Name}) ->
 %%     Ctx = ffs_fs_ctx()
 %% @end
 %%--------------------------------------------------------------------
-get_new_inode_num(#ffs_fs_ctx{ name = Name}) ->
+get_new_inode_num(#ffs_fs_ctx{ name = Name }) ->
     ets:update_counter(?COUNTER_TABLE,Name,1).
 
 %%--------------------------------------------------------------------
@@ -102,8 +102,8 @@ get_new_inode_num(#ffs_fs_ctx{ name = Name}) ->
 %%     Ctx = ffs_fs_ctx()
 %% @end
 %%--------------------------------------------------------------------
-store_inode(#ffs_fs_ctx{ inode = InodeTid}, Inode = #ffs_fs_inode{}) ->
-    dets:insert(InodeTid,Inode).
+store_inode(#ffs_fs_ctx{ inode = InodeCtx }, Inode = #ffs_fs_inode{}) ->
+    dets:insert(InodeCtx,Inode).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -114,8 +114,10 @@ store_inode(#ffs_fs_ctx{ inode = InodeTid}, Inode = #ffs_fs_inode{}) ->
 %%     InodeId = integer()
 %% @end
 %%--------------------------------------------------------------------
-lookup_inode(#ffs_fs_ctx{ inode = InodeTid}, InodeId) ->
-    case dets:lookup(InodeTid, InodeId) of
+lookup_inode(#ffs_fs_ctx{ inode = InodeCtx }, all) ->
+	dets:match_object(InodeCtx, #ffs_fs_inode{ _ = '_' });
+lookup_inode(#ffs_fs_ctx{ inode = InodeCtx }, InodeId) ->
+    case dets:lookup(InodeCtx, InodeId) of
         [] ->
             {error, not_found};
         [Object] ->
@@ -131,8 +133,8 @@ lookup_inode(#ffs_fs_ctx{ inode = InodeTid}, InodeId) ->
 %%     InodeId = integer()
 %% @end
 %%--------------------------------------------------------------------
-delete_inode(#ffs_fs_ctx{ inode = InodeTid}, InodeId) ->
-    case dets:delete(InodeTid, InodeId) of
+delete_inode(#ffs_fs_ctx{ inode = InodeCtx }, InodeId) ->
+    case dets:delete(InodeCtx, InodeId) of
         {error, _} ->
             {error, not_found};
         ok -> ok
@@ -147,10 +149,10 @@ delete_inode(#ffs_fs_ctx{ inode = InodeTid}, InodeId) ->
 %%     InodeId = integer()
 %% @end
 %%--------------------------------------------------------------------
-store_xattr(#ffs_fs_ctx{xattr = XattrTid}, InodeId, Key, Value) ->
-    dets:match_delete(XattrTid, #ffs_fs_xattr{inode=InodeId,
+store_xattr(#ffs_fs_ctx{xattr = XattrCtx }, InodeId, Key, Value) ->
+    dets:match_delete(XattrCtx, #ffs_fs_xattr{inode=InodeId,
                                               key=Key,_='_'}),
-    dets:insert(XattrTid, #ffs_fs_xattr{inode=InodeId,
+    dets:insert(XattrCtx, #ffs_fs_xattr{inode=InodeId,
                                         key=Key, value=Value}).
 
 %%--------------------------------------------------------------------
@@ -162,8 +164,8 @@ store_xattr(#ffs_fs_ctx{xattr = XattrTid}, InodeId, Key, Value) ->
 %%     InodeId = integer()
 %% @end
 %%--------------------------------------------------------------------
-lookup_xattr(#ffs_fs_ctx{xattr = XattrTid}, InodeId) ->
-    dets:lookup(XattrTid, InodeId).
+lookup_xattr(#ffs_fs_ctx{xattr = XattrCtx }, InodeId) ->
+    dets:lookup(XattrCtx, InodeId).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -174,8 +176,8 @@ lookup_xattr(#ffs_fs_ctx{xattr = XattrTid}, InodeId) ->
 %%     InodeId = integer()
 %% @end
 %%--------------------------------------------------------------------
-lookup_xattr(#ffs_fs_ctx{xattr = XattrTid}, InodeId, Key) ->
-    case dets:match(XattrTid, #ffs_fs_xattr{inode=InodeId,
+lookup_xattr(#ffs_fs_ctx{xattr = XattrCtx }, InodeId, Key) ->
+    case dets:match(XattrCtx, #ffs_fs_xattr{inode=InodeId,
                                             key=Key, value='$1',
                                             _='_'}) of
         [] ->
@@ -193,8 +195,8 @@ lookup_xattr(#ffs_fs_ctx{xattr = XattrTid}, InodeId, Key) ->
 %%     InodeId = integer()
 %% @end
 %%--------------------------------------------------------------------
-delete_xattr(#ffs_fs_ctx{ xattr = XattrTid}, InodeId, Key) ->
-    dets:match_delete(XattrTid, #ffs_fs_xattr{inode=InodeId,
+delete_xattr(#ffs_fs_ctx{ xattr = XattrCtx }, InodeId, Key) ->
+    dets:match_delete(XattrCtx, #ffs_fs_xattr{inode=InodeId,
                                               key=Key,_='_'}).
 
 
@@ -207,8 +209,8 @@ delete_xattr(#ffs_fs_ctx{ xattr = XattrTid}, InodeId, Key) ->
 %%     InodeId = integer()
 %% @end
 %%--------------------------------------------------------------------
-delete_xattr(#ffs_fs_ctx{ xattr = XattrTid}, InodeId) ->
-    dets:match_delete(XattrTid,#ffs_fs_xattr{inode=InodeId,_='_'}).
+delete_xattr(#ffs_fs_ctx{ xattr = XattrCtx }, InodeId) ->
+    dets:match_delete(XattrCtx,#ffs_fs_xattr{inode=InodeId,_='_'}).
 
 
 %%--------------------------------------------------------------------
@@ -219,8 +221,8 @@ delete_xattr(#ffs_fs_ctx{ xattr = XattrTid}, InodeId) ->
 %%     Ctx = ffs_fs_ctx()
 %% @end
 %%--------------------------------------------------------------------
-store_link(#ffs_fs_ctx{ link = LinkTid}, Link) ->
-    dets:insert(LinkTid, Link).
+store_link(#ffs_fs_ctx{ link = LinkCtx }, Link) ->
+    dets:insert(LinkCtx, Link).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -231,8 +233,8 @@ store_link(#ffs_fs_ctx{ link = LinkTid}, Link) ->
 %%     InodeId = integer()
 %% @end
 %%--------------------------------------------------------------------
-lookup_links(#ffs_fs_ctx{ link = LinkTid}, InodeId) ->
-    dets:lookup(LinkTid, InodeId).
+lookup_links(#ffs_fs_ctx{ link = LinkCtx }, InodeId) ->
+    dets:lookup(LinkCtx, InodeId).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -242,5 +244,5 @@ lookup_links(#ffs_fs_ctx{ link = LinkTid}, InodeId) ->
 %%     Ctx = ffs_fs_ctx()
 %% @end
 %%--------------------------------------------------------------------
-delete_link(#ffs_fs_ctx{ link = LinkTid }, Link) ->
-    dets:delete_object(LinkTid,Link).
+delete_link(#ffs_fs_ctx{ link = LinkCtx }, Link) ->
+    dets:delete_object(LinkCtx,Link).

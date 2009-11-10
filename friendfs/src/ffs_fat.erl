@@ -190,12 +190,15 @@ find(_Ctx, InodeI, []) ->
 %% @spec
 %%   list(Ctx,InodeI) -> [#ffs_fs_link{}] | []
 %%      Ctx = ffs_fs_ctx()
-%%      InodeI = inodei()
+%%      InodeI = inodei() | all
 %% @end
 %%--------------------------------------------------------------------
+list(Ctx,all) ->
+	ffs_fat_store:lookup_inode(Ctx,all);
 list(Ctx,InodeI) -> 
     Links = ffs_fat_store:lookup_links(Ctx,InodeI),
     [#ffs_fs_link{ to = InodeI, from = InodeI, name = ".", type = hard} | Links].
+
 
 %%--------------------------------------------------------------------
 %% @doc
