@@ -347,7 +347,7 @@ init(Name) ->
     Config = [{block_size,512},
 	      {inode_limit,1 bsl 32},
 	      {filesystem_id,1},
-	      {chunk_size,1 bsl 3}, %% 8 B
+	      {chunk_size,1 bsl 20}, %% 8 B
 	      {mnt_opts,0},
 	      {max_filename_size,36#sup},
               {uid,-1},
@@ -370,7 +370,7 @@ stop(Name) ->
 %%%==================================================================
 
 store_chunk(Data,_Config) ->
-    io:format("Storing data\n",[]),
+    %% io:format("Storing data\n",[]), 
     Ratio = 2,
     ffs_chunk_server:write(Data,Ratio).
 

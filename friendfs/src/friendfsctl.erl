@@ -73,6 +73,13 @@ cmd(Command) ->
     end.
 
 handle_cmd(["status"]) ->
+    Filesystems = ffs_config:get_filesystems(),
+    io:format("Filesystems:\n", []),
+    lists:foreach(
+      fun({{"Filesystem", Fs},Config}) ->
+              {_, Comment} = lists:keyfind("Comment", 1, Config),
+              io:format("~s\n ~s\n\n", [Fs, Comment])
+      end,Filesystems),
     {{_storages, S0},{_chunks, C0}} = ffs_chunk_server:info(),
     io:format("Storages:\n", []),
     lists:foreach(
@@ -112,6 +119,24 @@ handle_cmd(["load", M]) ->
             io:format("error ~p~n", [Err]),
             100
     end;
+handle_cmd(["mount", Path]) ->
+    case ffs_config:get_filesystems() of
+        [{{"Filesystem", Fs},_}] ->
+            Options="fs="++Fs,
+            handle_cmd(["mount", Path, Options]);
+        _ ->
+            io:format("More than one filesystem configured, "
+                      "you need to define with fs with fs=<name>\n", []),
+            100
+    end;
+handle_cmd(["mount", Path, Options]) ->
+    io:format("Mounting friendfs in ~p with ~p\n", [Path, Options]),
+    ffs_mountpoint_sup:mount(Path, Options),
+    0;
+handle_cmd(["unmount", Path]) ->
+    Fs = "temp",
+    io:format("UnMounting filesystem ~p on ~p\n", [Fs, Path]),
+    0;
 handle_cmd(Other) ->
     io:format("Unknown command: ~p~n~n", [Other]),
     usage(),

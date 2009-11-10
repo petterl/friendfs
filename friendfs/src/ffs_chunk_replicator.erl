@@ -207,11 +207,13 @@ prioritize(_, _) -> false.
 %% @end
 %%--------------------------------------------------------------------
 handle_info(timeout, State = #state{queue=[]}) ->
-    {noreply, State, ?INTERVAL};
+    {noreply, State, ?INTERVAL}; 
 handle_info(timeout, State = #state{queue=[Action | Queue]}) ->
-    Res = action(Action),
-    ?DBG("~p: ~p -> ~p~n", [?MODULE, Action, Res]),
-    {noreply, State#state{queue=Queue}, ?INTERVAL};
+    spawn(fun() ->
+                  Res = action(Action),
+                  ?DBG("~p -> ~p~n", [Action, Res])
+          end),
+    {noreply, State#state{queue=Queue}, 50};
 handle_info(_Info, State) ->
     ?ERR("Info not handled: ~p~n", [_Info]),
     {noreply, State, ?INTERVAL}.
