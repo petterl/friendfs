@@ -216,7 +216,9 @@ flush(FsName, InodeI ) ->
 %% @end
 %%--------------------------------------------------------------------
 flush_cache(Ctx,InodeI) when is_integer(InodeI) ->
-    flush_cache(Ctx,ffs_fat:lookup(Ctx,InodeI));
+	Inode = ffs_fat:lookup(Ctx,InodeI),
+	ffs_fat:write_cache(Ctx, InodeI, undefined),
+    flush_cache(Ctx,Inode);
 flush_cache(_Ctx,#ffs_fs_inode{ write_cache = undefined }) ->
     [];
 flush_cache(_Ctx,#ffs_fs_inode{ write_cache = {undefined,Data} } ) ->
