@@ -496,7 +496,11 @@ write_cache(Ctx,InodeI,Cache) ->
 %%--------------------------------------------------------------------
 flush_cache(Ctx,INodeI,Chunk) ->
     INode = lookup(Ctx,INodeI),
-    ffs_fat_store:store_inode(Ctx, INode#ffs_fs_inode{ chunks = Chunk }).
+	Size = lists:foldl(fun(#ffs_fs_chunk{ size = Size }, Acc) ->
+		Acc + Size
+		end,0,Chunk),
+    ffs_fat_store:store_inode(Ctx, INode#ffs_fs_inode{ chunks = Chunk,
+size = Size }).
 
 %%--------------------------------------------------------------------
 %% @doc

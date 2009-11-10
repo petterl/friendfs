@@ -59,7 +59,7 @@
 
 -record(state,{ filesystem, default_uid, default_gid }).
 
--define(DBG2(Str), ?DBG("Ctx = ~p~n~p~n", [Str, Ctx])).
+-define(DBG2(Str), ?DBG("Ctx = ~p~n~p~n", [Ctx, Str])).
 
 %%%===================================================================
 %%% API
