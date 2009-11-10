@@ -41,10 +41,10 @@
 %% @end
 %%--------------------------------------------------------------------
 list(FsName,INodeI) ->
-    Tid = ffs_config:read({fs_tid, FsName}),
-    Links = ffs_fat:list(Tid, INodeI),
-    lists:map(fun(#ffs_link{ name = Name, to = To }) ->
-		      {Name,ffs_fat:lookup(Tid, To)}
+    Ctx = ffs_config:read({fs_tid, FsName}),
+    Links = ffs_fat:list(Ctx, INodeI),
+    lists:map(fun(#ffs_fs_link{ name = Name, to = To }) ->
+		      {Name,ffs_fat:lookup(Ctx, To)}
 	      end,Links).    
 
 %%--------------------------------------------------------------------
@@ -56,8 +56,8 @@ list(FsName,INodeI) ->
 %% @end
 %%--------------------------------------------------------------------
 read(FsName, InodeI, Size, Offset) ->
-    Tid = ffs_config:read({fs_tid, FsName}),
-    {NewOffset,Chunks} = ffs_fat:read(Tid,InodeI,Size,Offset),
+    Ctx = ffs_config:read({fs_tid, FsName}),
+    {NewOffset,Chunks} = ffs_fat:read(Ctx,InodeI,Size,Offset),
     case read_chunks(Chunks) of
 	<<_Head:NewOffset/binary,Data:Size/binary,_Rest/binary>> ->
 	    {ok,Data};
@@ -74,42 +74,42 @@ read(FsName, InodeI, Size, Offset) ->
 %% @end
 %%--------------------------------------------------------------------
 write(FsName, InodeI, Data, Offset) ->
-    Tid = ffs_config:read({fs_tid, FsName}),
+    Ctx = ffs_config:read({fs_tid, FsName}),
     Config = ffs_config:read({fs_config, FsName}),
-    case write_cache(Tid, InodeI, Data, Offset, Config) of
+    case write_cache(Ctx, InodeI, Data, Offset, Config) of
 	[] ->
 	    ok;
 	Chunks when is_list(Chunks) ->
-	    update_chunks(Chunks, InodeI, Tid, Config)
+	    update_chunks(Chunks, InodeI, Ctx, Config)
     end.
 
-update_chunks([{append_chunk, ChunkData} | R], InodeI, Tid, Config) ->
-	ChunkPos = length((ffs_fat:lookup(Tid,InodeI))#ffs_inode.chunks),
+update_chunks([{append_chunk, ChunkData} | R], InodeI, Ctx, Config) ->
+	ChunkPos = length((ffs_fat:lookup(Ctx,InodeI))#ffs_fs_inode.chunks),
     {ok, ChunkId} = store_chunk(ChunkData,Config),
-	update_inode(Tid,InodeI,ChunkPos,ChunkId,size(ChunkData)),
-    update_chunks(R, InodeI, Tid, Config);
-update_chunks([{update_chunk, #ffs_chunk{ chunkid = OldChunkId,
+	update_inode(Ctx,InodeI,ChunkPos,ChunkId,size(ChunkData)),
+    update_chunks(R, InodeI, Ctx, Config);
+update_chunks([{update_chunk, #ffs_fs_chunk{ chunkid = OldChunkId,
  										  id = ChunkPos }, ChunkData} | R], 
-		InodeI, Tid, Config) ->
+		InodeI, Ctx, Config) ->
 	{ok, NewChunkId} = store_chunk(ChunkData,Config),
-	update_inode(Tid,InodeI,ChunkPos,NewChunkId,size(ChunkData)),
+	update_inode(Ctx,InodeI,ChunkPos,NewChunkId,size(ChunkData)),
     delete_chunk(OldChunkId, Config),
-    update_chunks(R, InodeI, Tid, Config);
-update_chunks([],_InodeI, _Tid, _Config) ->
+    update_chunks(R, InodeI, Ctx, Config);
+update_chunks([],_InodeI, _Ctx, _Config) ->
     ok.
 
-update_inode(Tid,InodeI,ChunkPos,ChunkId,Size) ->
-	OldChunks = (ffs_fat:lookup(Tid,InodeI))#ffs_inode.chunks,
-	NewChunk = #ffs_chunk{ id = ChunkPos, size = Size, chunkid = ChunkId},
-	ffs_fat:flush_cache(Tid,InodeI,lists:keystore(ChunkPos,#ffs_chunk.id,OldChunks,NewChunk)).
+update_inode(Ctx,InodeI,ChunkPos,ChunkId,Size) ->
+	OldChunks = (ffs_fat:lookup(Ctx,InodeI))#ffs_fs_inode.chunks,
+	NewChunk = #ffs_fs_chunk{ id = ChunkPos, size = Size, chunkid = ChunkId},
+	ffs_fat:flush_cache(Ctx,InodeI,lists:keystore(ChunkPos,#ffs_fs_chunk.id,OldChunks,NewChunk)).
 
 %%--------------------------------------------------------------------
 %% @doc
 %% Description
 %%
 %% @spec
-%%   write_cache(Tid,InodeI,NewData,Offset,Config) -> [{chunk,ChunkId,Data}] | more
-%%      Tid = ffs_tid()
+%%   write_cache(Ctx,InodeI,NewData,Offset,Config) -> [{chunk,ChunkId,Data}] | more
+%%      Ctx = ffs_tid()
 %%      InodeI = inodei()
 %%      NewData = binary()
 %%      Offset = integer()
@@ -117,21 +117,19 @@ update_inode(Tid,InodeI,ChunkPos,ChunkId,Size) ->
 %%      Data = binary()
 %% @end
 %%--------------------------------------------------------------------
-write_cache(Tid,InodeI,Data,Offset,Config) ->
-    write_cache(Tid,InodeI,Data,Offset,Config,[]).
-write_cache(Tid,InodeI,Data,Offset,Config,Acc) ->
+write_cache(Ctx,InodeI,Data,Offset,Config) ->
     ChunkSize = ffs_lib:get_value(chunk_size,Config),
-    {NewOffset,Chunks} = ffs_fat:read(Tid,InodeI,size(Data),Offset),
-	Inode = ffs_fat:lookup(Tid,InodeI),
-	{ok,FirstChunkData} = get_chunkdata(Inode#ffs_inode.write_cache,Chunks),
+    {NewOffset,Chunks} = ffs_fat:read(Ctx,InodeI,size(Data),Offset),
+	Inode = ffs_fat:lookup(Ctx,InodeI),
+	{ok,FirstChunkData} = get_chunkdata(Inode#ffs_fs_inode.write_cache,Chunks),
 	<<Head:NewOffset/binary,FirstChunkDataTail/binary>> = <<FirstChunkData/binary>>,
-	{NewCache,Actions} = write_cache(Head,FirstChunkDataTail,NewOffset,Data,Chunks,Inode,Tid,ChunkSize,[]),
-	ffs_fat:write_cache(Tid,InodeI,NewCache),
+	{NewCache,Actions} = write_cache(Head,FirstChunkDataTail,NewOffset,Data,Chunks,Inode,Ctx,ChunkSize,[]),
+	ffs_fat:write_cache(Ctx,InodeI,NewCache),
 	Actions.
 
 %% When we have reached the last chunk which needs to be modified
 write_cache(<<Head/binary>>,<<Rest/binary>>,_Offset,<<Data/binary>>,
-			Chunks,Inode,Tid,ChunkSize,Acc) 
+			Chunks,_Inode,_Ctx,ChunkSize,Acc) 
 		when size(Data) =< size(Rest); (size(Data) div ChunkSize) == 0 ->
 	DataSize = size(Data),
 	RestData = case Rest of
@@ -150,7 +148,7 @@ write_cache(<<Head/binary>>,<<Rest/binary>>,_Offset,<<Data/binary>>,
 	 lists:reverse(Acc)};
 %% When this and more chunks have to be modified
 write_cache(<<Head/binary>>,<<_Rest/binary>>,Offset,WholeData,
-			Chunks,Inode,Tid,ChunkSize,Acc) ->
+			Chunks,Inode,Ctx,ChunkSize,Acc) ->
 	DataSize = get_chunksize(Chunks,ChunkSize) - Offset,
 
 	<<Data:DataSize/binary,RestData/binary>> = <<WholeData/binary>>,
@@ -162,10 +160,10 @@ write_cache(<<Head/binary>>,<<_Rest/binary>>,Offset,WholeData,
 	ChunkUpdate = chunk_update(Chunks,NewChunkData),
 	
 	write_cache(<<>>,NextChunkData,0,RestData,safe_tl(Chunks),
-				Inode,Tid,ChunkSize,
+				Inode,Ctx,ChunkSize,
 				ChunkUpdate++Acc).
 
-get_chunksize([#ffs_chunk{ size = Size }|_T],_) ->
+get_chunksize([#ffs_fs_chunk{ size = Size }|_T],_) ->
 	Size;
 get_chunksize(_,ChunkSize) ->
 	ChunkSize.
@@ -180,7 +178,7 @@ safe_tl([]) ->
 safe_tl([_|T]) ->
 	T.
 	
-get_chunkdata({#ffs_chunk{ id = Id },Data},[#ffs_chunk{ id = Id }|_T]) ->
+get_chunkdata({#ffs_fs_chunk{ id = Id },Data},[#ffs_fs_chunk{ id = Id }|_T]) ->
 	{ok,Data};
 get_chunkdata({_Id,Data},[]) ->
 	{ok,Data};
@@ -198,13 +196,13 @@ get_chunkdata(_,_) ->
 %% @end
 %%--------------------------------------------------------------------
 flush(FsName, InodeI ) ->
-    Tid = ffs_config:read({fs_tid, FsName}),
+    Ctx = ffs_config:read({fs_tid, FsName}),
     Config = ffs_config:read({fs_config, FsName}),
-    case flush_cache( Tid, InodeI ) of
+    case flush_cache( Ctx, InodeI ) of
 	[] ->
 	    ok;
 	Chunks ->
-	    update_chunks(Chunks, InodeI, Tid, Config)
+	    update_chunks(Chunks, InodeI, Ctx, Config)
     end.
 
 %%--------------------------------------------------------------------
@@ -212,19 +210,19 @@ flush(FsName, InodeI ) ->
 %% Description	
 %%
 %% @spec
-%%   flush_cache(Tid,InodeI) -> {chunk,ChunkId,Data} | empty
-%%      Tid = ffs_tid()
+%%   flush_cache(Ctx,InodeI) -> {chunk,ChunkId,Data} | empty
+%%      Ctx = ffs_tid()
 %%      InodeI = inodei()
 %% @end
 %%--------------------------------------------------------------------
-flush_cache(Tid,InodeI) when is_integer(InodeI) ->
-	ffs_fat:flush_cache(Tid,InodeI,undefined),
-    flush_cache(Tid,ffs_fat:lookup(Tid,InodeI));
-flush_cache(_Tid,#ffs_inode{ write_cache = undefined }) ->
+flush_cache(Ctx,InodeI) when is_integer(InodeI) ->
+	ffs_fat:flush_cache(Ctx,InodeI,undefined),
+    flush_cache(Ctx,ffs_fat:lookup(Ctx,InodeI));
+flush_cache(_Ctx,#ffs_fs_inode{ write_cache = undefined }) ->
     [];
-flush_cache(Tid,#ffs_inode{ write_cache = {undefined,Data} } = Inode) ->
+flush_cache(_Ctx,#ffs_fs_inode{ write_cache = {undefined,Data} } ) ->
     [{append_chunk,Data}];
-flush_cache(Tid,#ffs_inode{ write_cache = {Chunk,Data} } = Inode) ->
+flush_cache(_Ctx,#ffs_fs_inode{ write_cache = {Chunk,Data} } ) ->
     [{update_chunk,Chunk,Data}].
 
 %%--------------------------------------------------------------------
@@ -236,8 +234,8 @@ flush_cache(Tid,#ffs_inode{ write_cache = {Chunk,Data} } = Inode) ->
 %% @end
 %%--------------------------------------------------------------------
 create(FsName, ParentI, Name, Uid, Gid, Mode) ->
-    Tid = ffs_config:read({fs_tid, FsName}),
-    ffs_fat:create(Tid,ParentI,Name,Uid,Gid,Mode,0,0).
+    Ctx = ffs_config:read({fs_tid, FsName}),
+    ffs_fat:create(Ctx,ParentI,Name,Uid,Gid,Mode,0,0).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -248,11 +246,11 @@ create(FsName, ParentI, Name, Uid, Gid, Mode) ->
 %% @end
 %%--------------------------------------------------------------------
 delete(FsName, ParentI,Name) ->
-    Tid = ffs_config:read({fs_tid, FsName}),
-    case ffs_fat:unlink(Tid,ParentI,Name) of
+    Ctx = ffs_config:read({fs_tid, FsName}),
+    case ffs_fat:unlink(Ctx,ParentI,Name) of
 	{delete,Inode} ->
-	    [ffs_chunk_server:delete(ChunkId) ||
-		ChunkId <- Inode#ffs_inode.chunks];
+	    [ffs_fs_chunk_server:delete(ChunkId) ||
+		ChunkId <- Inode#ffs_fs_inode.chunks];
 	_Else ->
 	    ok
     end.
@@ -267,12 +265,12 @@ delete(FsName, ParentI,Name) ->
 %% @end
 %%--------------------------------------------------------------------
 make_dir(FsName, ParentInodeI, Name, Mode) ->
-    Tid = ffs_config:read({fs_tid, FsName}),
-    Parent = ffs_fat:lookup(Tid,ParentInodeI),
+    Ctx = ffs_config:read({fs_tid, FsName}),
+    Parent = ffs_fat:lookup(Ctx,ParentInodeI),
     
-    #ffs_inode{ gid = Gid, uid = Uid} = Parent,
+    #ffs_fs_inode{ gid = Gid, uid = Uid} = Parent,
     
-    ffs_fat:make_dir(Tid, ParentInodeI, Name, Uid, Gid, Mode).
+    ffs_fat:make_dir(Ctx, ParentInodeI, Name, Uid, Gid, Mode).
 
 
 %%--------------------------------------------------------------------
@@ -284,8 +282,8 @@ make_dir(FsName, ParentInodeI, Name, Mode) ->
 %% @end
 %%--------------------------------------------------------------------
 lookup(FsName,InodeI) ->
-    Tid = ffs_config:read({fs_tid, FsName}),
-    ffs_fat:lookup(Tid, InodeI).
+    Ctx = ffs_config:read({fs_tid, FsName}),
+    ffs_fat:lookup(Ctx, InodeI).
 
 
 %%--------------------------------------------------------------------
@@ -297,10 +295,10 @@ lookup(FsName,InodeI) ->
 %% @end
 %%--------------------------------------------------------------------
 find(FsName,ParentInodeI,Path) ->
-    Tid = ffs_config:read({fs_tid, FsName}),
-    case ffs_fat:find(Tid, ParentInodeI, Path) of
+    Ctx = ffs_config:read({fs_tid, FsName}),
+    case ffs_fat:find(Ctx, ParentInodeI, Path) of
 	enoent -> enoent;
-	InodeI -> ffs_fat:lookup(Tid, InodeI)
+	InodeI -> ffs_fat:lookup(Ctx, InodeI)
     end.
 
 %%--------------------------------------------------------------------
@@ -357,11 +355,11 @@ init(Name) ->
               {mode,755}],
     ffs_config:write({fs_config, Name}, Config), 
     
-    Tid = ffs_fat:init(Name,
+    Ctx = ffs_fat:init(Name,
 		       ffs_lib:get_value(uid,Config),
 		       ffs_lib:get_value(gid,Config),
 		       ffs_lib:get_value(mode,Config)),
-    ffs_config:write({fs_tid, Name}, Tid), 
+    ffs_config:write({fs_tid, Name}, Ctx), 
     ok.
 
 stop(Name) ->
@@ -374,15 +372,15 @@ stop(Name) ->
 store_chunk(Data,_Config) ->
     io:format("Storing data\n",[]),
     Ratio = 2,
-    ffs_chunk_server:write(Data,Ratio).
+    ffs_fs_chunk_server:write(Data,Ratio).
 
 delete_chunk(ChunkId,_Config) ->
 	io:format("Deleting ~p\n",[ChunkId]),
     ok.
 
 read_chunks(Chunks) ->
-    Data = ffs_lib:pmap(fun(#ffs_chunk{ chunkid = ChunkId }) ->
-				ffs_chunk_server:read(ChunkId)
+    Data = ffs_lib:pmap(fun(#ffs_fs_chunk{ chunkid = ChunkId }) ->
+				ffs_fs_chunk_server:read(ChunkId)
 			end,Chunks),
     read_chunks(Data,<<>>).
 

@@ -11,6 +11,7 @@
 %% API
 -export([init/1,
 	 init/4,
+	 stop/1,
 	 make_dir/6,
 	 create/8,
 	 lookup/2,
@@ -41,15 +42,15 @@
 %%====================================================================
 %% Typedefs
 %%====================================================================
-%% @type ffs_fat_ctx() = term(). 
+%% @type ffs_fs_ctx() = #ffs_fs_ctx{}. 
 %%     Contains information about which tables to use.
 %% @end
 %%
-%% @type ffs_inode() = #ffs_inode{}.
+%% @type ffs_fs_inode() = #ffs_fs_inode{}.
 %%     Contains information about a specific inode.
 %% @end
 %%
-%% @type ffs_link() = #ffs_link{}.
+%% @type ffs_fs_link() = #ffs_fs_link{}.
 %%     Contains information about a specifik link.
 %% @end
 %%
@@ -65,14 +66,14 @@
 %% Initiate a new ffs_fat system. The return value of this function 
 %% is usedd as indata to all other functions in this module. 
 %%
-%% @spec init(Name) -> ffs_fat_ctx()
+%% @spec init(Name) -> ffs_fs_ctx()
 %%     Name = atom()
 %% @end
 %%--------------------------------------------------------------------
 init(Name) ->
     init(Name,-1,-1,?U bor ?G_X bor ?G_R bor ?O_X bor ?O_R).
 init(Name,Uid,Gid,Mode) ->
-    Ctx = ffs_fat_store:init(Name),    
+    Ctx = ffs_fat_store:init(Name,[]),
     create(Ctx,1,"..",Uid,Gid,?D bor Mode,0,0),
     Ctx.
 
@@ -84,8 +85,8 @@ stop(Name) ->
 %% 
 %%
 %% @spec
-%%   make_dir(Ctx,Parent,Name,Uid,Gid,Mode) -> ffs_inode()
-%%      Ctx = ffs_fat_ctx()
+%%   make_dir(Ctx,Parent,Name,Uid,Gid,Mode) -> ffs_fs_inode()
+%%      Ctx = ffs_fs_ctx()
 %%      Parent = inodei()
 %%      Name = string()
 %%      Uid = integer()
@@ -93,11 +94,9 @@ stop(Name) ->
 %%      Mode = integer()
 %% @end
 %%--------------------------------------------------------------------
-make_dir(Ctx, Parent, Name, Uid, Gid, Mode) -> 
-    
+make_dir(Ctx, Parent, Name, Uid, Gid, Mode) ->     
     Inode = create(Ctx,Parent,Name,Uid,Gid,Mode bor ?D,0,4096),
-    ln(Ctx,Inode#ffs_inode.inode,Parent,"..",hard),
-    
+    ln(Ctx,Inode#ffs_fs_inode.inode,Parent,"..",hard),
     Inode.
 
 %%--------------------------------------------------------------------
@@ -105,8 +104,8 @@ make_dir(Ctx, Parent, Name, Uid, Gid, Mode) ->
 %% 
 %%
 %% @spec
-%%   create(Ctx, Parent, Name, Uid, Gid, Mode, Hash, Size) -> ffs_inode()
-%%      Ctx = ffs_fat_ctx()
+%%   create(Ctx, Parent, Name, Uid, Gid, Mode, Hash, Size) -> ffs_fs_inode()
+%%      Ctx = ffs_fs_ctx()
 %%      Parent = inodei()
 %%      Name = string()
 %%      Uid = integer()
@@ -117,7 +116,7 @@ make_dir(Ctx, Parent, Name, Uid, Gid, Mode) ->
 %% @end
 %%--------------------------------------------------------------------
 create(Ctx, Parent, Name, Uid, Gid, Mode, Hash, Size) ->
-    NewInodeI = ffs_fat_store:get_new_inode(Ctx),
+    NewInodeI = ffs_fat_store:get_new_inode_num(Ctx),
 
     Timestamp = now(),
     if
@@ -126,7 +125,7 @@ create(Ctx, Parent, Name, Uid, Gid, Mode, Hash, Size) ->
 	true ->
 	    NewMode = Mode bor ?F
     end,
-    NewInode = #ffs_inode{
+    NewInode = #ffs_fs_inode{
       inode = NewInodeI,
       hash = Hash,
       size = Size,
@@ -139,7 +138,7 @@ create(Ctx, Parent, Name, Uid, Gid, Mode, Hash, Size) ->
       refcount = 0
      },
     ffs_fat_store:store_inode(Ctx, NewInode),
-    ffs_fat_store:store_xattr(Ctx, #ffs_xattr{inode = NewInodeI}),
+    ffs_fat_store:store_xattr(Ctx, #ffs_fs_xattr{inode = NewInodeI}),
     ln(Ctx,Parent,NewInodeI,Name,hard),
     lookup(Ctx,NewInodeI).
 
@@ -148,8 +147,8 @@ create(Ctx, Parent, Name, Uid, Gid, Mode, Hash, Size) ->
 %% 
 %%
 %% @spec
-%%   lookup(Ctx,InodeI) -> #ffs_inode{} | enoent
-%%      Ctx = ffs_fat_ctx()
+%%   lookup(Ctx,InodeI) -> #ffs_fs_inode{} | enoent
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %% @end
 %%--------------------------------------------------------------------
@@ -167,7 +166,7 @@ lookup(Ctx,InodeI) ->
 %%
 %% @spec
 %%   find(Ctx,InodeI,Path) -> integer() | enoent
-%%      Ctx = ffs_fat_ctx()
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %%      Path = string()
 %% @end
@@ -178,10 +177,10 @@ find(Ctx,Inode,Path) when is_integer(hd(Path)) ->
     find(Ctx,Inode,string:tokens(Path,"/"));
 find(Ctx,Inode,[Name|Path]) -> 
     Links = ffs_fat_store:lookup_links(Ctx, Inode),
-    case lists:keyfind(Name,#ffs_link.name,Links) of
+    case lists:keyfind(Name,#ffs_fs_link.name,Links) of
 	false ->
 	    {error,enoent};
-	#ffs_link{ to = Next } ->
+	#ffs_fs_link{ to = Next } ->
 	    find(Ctx,Next,Path)
     end;
 find(_Ctx, Inode, []) ->
@@ -192,22 +191,22 @@ find(_Ctx, Inode, []) ->
 %% 
 %%
 %% @spec
-%%   list(Ctx,InodeI) -> [#ffs_link{}] | []
-%%      Ctx = ffs_fat_ctx()
+%%   list(Ctx,InodeI) -> [#ffs_fs_link{}] | []
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %% @end
 %%--------------------------------------------------------------------
 list(Ctx,InodeI) -> 
     Links = ffs_fat_store:lookup_links(Ctx,InodeI),
-    [#ffs_link{ to = InodeI, from = InodeI, name = ".", type = hard} | Links].
+    [#ffs_fs_link{ to = InodeI, from = InodeI, name = ".", type = hard} | Links].
 
 %%--------------------------------------------------------------------
 %% @doc
 %% Description
 %%
 %% @spec
-%%   ln(Ctx,From,To,Name,Type) -> #ffs_link{}
-%%      Ctx = ffs_fat_ctx()
+%%   ln(Ctx,From,To,Name,Type) -> #ffs_fs_link{}
+%%      Ctx = ffs_fs_ctx()
 %%      From = inodei()
 %%      To = inodei()
 %%      Name = string()
@@ -215,14 +214,14 @@ list(Ctx,InodeI) ->
 %% @end
 %%--------------------------------------------------------------------
 ln(Ctx, From, To, Name, Type) -> 
-    Link = #ffs_link{ from = From, 
+    Link = #ffs_fs_link{ from = From, 
 		      to = To, 
 		      name = Name,
 		      type = Type},
     
     ffs_fat_store:store_link(Ctx, Link),
-    [#ffs_inode{ refcount = Cnt } = Inode] = ffs_fat_store:lookup_inode(Ctx,To),
-    ffs_fat_store:store_inode(Ctx, Inode#ffs_inode{ refcount = Cnt +1 }),
+    Inode = #ffs_fs_inode{ refcount = Cnt } = lookup(Ctx,To),
+    ffs_fat_store:store_inode(Ctx, Inode#ffs_fs_inode{ refcount = Cnt +1 }),
     Link.
 
 %%--------------------------------------------------------------------
@@ -231,7 +230,7 @@ ln(Ctx, From, To, Name, Type) ->
 %%
 %% @spec
 %%   unlink(Ctx,From,Path) -> ok | {error, Error}
-%%      Ctx = ffs_fat_ctx()
+%%      Ctx = ffs_fs_ctx()
 %%      From = inodei()
 %%      Path = string()
 %% @end
@@ -247,16 +246,17 @@ unlink(Ctx,From,Path) ->
     end.
 unlink(Ctx, From, Path, ToInodeI) ->
     ToInode = lookup(Ctx,ToInodeI),
-    ffs_fat_store:delete_link(Ctx, #ffs_link{ from = From, 
-					      to = ToInode#ffs_inode.inode, 
+    ffs_fat_store:delete_link(Ctx, #ffs_fs_link{ from = From, 
+					      to = ToInode#ffs_fs_inode.inode, 
 					      name = filename:basename(Path),
 					      type = hard }),
     case ToInode of
-	#ffs_inode{ refcount = 1 } ->
+	#ffs_fs_inode{ refcount = 1 } ->
 	    ffs_fat_store:delete_inode(Ctx, ToInodeI),
 	    {delete,ToInode};
-	#ffs_inode{ refcount = Cnt } ->
-	    ffs_fat_store:store_inode(Ctx, ToInode#ffs_inode{ refcount = Cnt-1 }),
+	#ffs_fs_inode{ refcount = Cnt } ->
+	    ffs_fat_store:store_inode(Ctx, 
+				      ToInode#ffs_fs_inode{refcount = Cnt-1}),
 	    {keep,ToInode};
 	enoent ->
 	    enoent
@@ -267,8 +267,8 @@ unlink(Ctx, From, Path, ToInodeI) ->
 %% Description
 %%
 %% @spec
-%%   rename(Ctx,OldFrom,OldPath,NewPath) -> #ffs_link{} | enoent
-%%      Ctx = ffs_fat_ctx()
+%%   rename(Ctx,OldFrom,OldPath,NewPath) -> #ffs_fs_link{} | enoent
+%%      Ctx = ffs_fs_ctx()
 %%      OldFrom = inodei()
 %%      OldPath = string()
 %%      NewPath = string()
@@ -286,14 +286,14 @@ rename(Ctx, OldFrom, OldPath, NewPath) ->
 		   NewFromInodeI,filename:basename(NewPath))
     end.
 rename(Ctx,OldFrom,OldTo,OldName,NewFrom,NewName) ->
-    NewLink = #ffs_link{ to = OldTo,
-			 from = NewFrom,
-			 name = NewName,
-			 type = hard },
+    NewLink = #ffs_fs_link{ to = OldTo,
+			    from = NewFrom,
+			    name = NewName,
+			    type = hard },
     ffs_fat_store:store_link(Ctx, NewLink),
-    ffs_fat_store:delete_link(Ctx, #ffs_link{ to = OldTo,
-					      from = OldFrom,
-					      name = OldName, _ = '_' }),
+    ffs_fat_store:delete_link(Ctx, #ffs_fs_link{ to = OldTo,
+						 from = OldFrom,
+						 name = OldName, _ = '_' }),
     NewLink.
 
 %%--------------------------------------------------------------------
@@ -301,15 +301,15 @@ rename(Ctx,OldFrom,OldTo,OldName,NewFrom,NewName) ->
 %% 
 %%	
 %% @spec
-%%   chmod(Ctx, InodeI, NewMode) -> #ffs_inode{}
-%%      Ctx = ffs_fat_ctx()
+%%   chmod(Ctx, InodeI, NewMode) -> #ffs_fs_inode{}
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %%      NewMode = integer()
 %% @end
 %%--------------------------------------------------------------------
 chmod(Ctx, InodeI, NewMode) ->
     Inode = lookup(Ctx,InodeI),
-    NewInode = Inode#ffs_inode{ mode = NewMode },
+    NewInode = Inode#ffs_fs_inode{ mode = NewMode },
     ffs_fat_store:store_inode(Ctx, NewInode),
     NewInode.
 
@@ -319,15 +319,15 @@ chmod(Ctx, InodeI, NewMode) ->
 %% 
 %%
 %% @spec
-%%   chgrp(Ctx, InodeI, NewGroup) -> #ffs_inode{}
-%%      Ctx = ffs_fat_ctx()
+%%   chgrp(Ctx, InodeI, NewGroup) -> #ffs_fs_inode{}
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %%      NewGroup = integer()
 %% @end
 %%--------------------------------------------------------------------
 chgrp(Ctx, InodeI, NewGroup) ->
     Inode = lookup(Ctx,InodeI),
-    NewInode = Inode#ffs_inode{ gid = NewGroup },
+    NewInode = Inode#ffs_fs_inode{ gid = NewGroup },
     ffs_fat_store:store_inode(Ctx, NewInode),
     NewInode.
 
@@ -336,15 +336,15 @@ chgrp(Ctx, InodeI, NewGroup) ->
 %% 
 %%
 %% @spec
-%%   chown(Ctx, InodeI, NewOwner) -> #ffs_inode{}
-%%      Ctx = ffs_fat_ctx()
+%%   chown(Ctx, InodeI, NewOwner) -> #ffs_fs_inode{}
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %%      NewOwner = integer()
 %% @end
 %%--------------------------------------------------------------------
 chown(Ctx, InodeI, NewOwner) ->
     Inode = lookup(Ctx,InodeI),
-    NewInode = Inode#ffs_inode{ uid = NewOwner },
+    NewInode = Inode#ffs_fs_inode{ uid = NewOwner },
     ffs_fat_store:store_inode(Ctx, NewInode),
     NewInode.
 
@@ -353,8 +353,8 @@ chown(Ctx, InodeI, NewOwner) ->
 %% 
 %%
 %% @spec
-%%   access(Ctx,InodeI) -> #ffs_inode{} | enoent
-%%      Ctx = ffs_fat_ctx()
+%%   access(Ctx,InodeI) -> #ffs_fs_inode{} | enoent
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %% @end
 %%--------------------------------------------------------------------
@@ -364,7 +364,7 @@ access(Ctx, InodeI) ->
 	Inode =:= enoent ->
 	    enoent;
 	true ->
-	    NewInode = Inode#ffs_inode{ atime = now() },
+	    NewInode = Inode#ffs_fs_inode{ atime = now() },
 	    ffs_fat_store:store_inode(Ctx, NewInode),
 	    NewInode
     end.
@@ -374,8 +374,8 @@ access(Ctx, InodeI) ->
 %% 
 %%
 %% @spec
-%%   modify(Ctx,InodeI,NewHash,NewSize) -> #ffs_inode{} | enoent
-%%      Ctx = ffs_fat_ctx()
+%%   modify(Ctx,InodeI,NewHash,NewSize) -> #ffs_fs_inode{} | enoent
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %%      NewHash = integer()
 %%      NewSize = integer()
@@ -387,7 +387,7 @@ modify(Ctx, InodeI, NewHash, NewSize) ->
 	Inode =:= enoent ->
 	    enoent;
 	true ->
-	    NewInode = Inode#ffs_inode{ mtime = now(),
+	    NewInode = Inode#ffs_fs_inode{ mtime = now(),
 					hash = NewHash,
 					size = NewSize },
 	    ffs_fat_store:store_inode(Ctx, NewInode),
@@ -400,7 +400,7 @@ modify(Ctx, InodeI, NewHash, NewSize) ->
 %%
 %% @spec
 %%   list_xattr(Ctx,InodeI) -> [{Key,Value}] | [] | enoent
-%%      Ctx = ffs_fat_ctx()
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %%      Key = term()
 %%      Value = term()
@@ -415,7 +415,7 @@ list_xattr(Ctx, InodeI) ->
 %%
 %% @spec
 %%   get_xattr(Ctx,InodeI,Key) -> Value | enoent
-%%      Ctx = ffs_fat_ctx()
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %%      Key = term()
 %%      Value = term()
@@ -430,7 +430,7 @@ get_xattr(Ctx, InodeI, Key) ->
 %%
 %% @spec
 %%   set_xattr(Ctx,InodeI,Key,Value) -> ok | enoent
-%%      Ctx = ffs_fat_ctx()
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %%      Key = term()
 %%      Value = term()
@@ -445,7 +445,7 @@ set_xattr(Ctx, InodeI, Key, Value) ->
 %%
 %% @spec
 %%   delete_xattr(Ctx,InodeI,Key) -> ok | enoent
-%%      Ctx = ffs_fat_ctx()
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %%      Key = term()
 %% @end
@@ -459,7 +459,7 @@ delete_xattr(Ctx, InodeI, Key) ->
 %%
 %% @spec
 %%   write_cache(Ctx,InodeI,Chunk) -> ok | enoent
-%%      Ctx = ffs_fat_ctx()
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %%      Chunk = {Id, Data}
 %%      Data = binary()
@@ -468,7 +468,7 @@ delete_xattr(Ctx, InodeI, Key) ->
 %%--------------------------------------------------------------------
 write_cache(Ctx,InodeI,Cache) ->
     Inode = lookup(Ctx,InodeI),
-    ffs_fat_store:store_inode(Ctx, Inode#ffs_inode{ write_cache = Cache }).
+    ffs_fat_store:store_inode(Ctx, Inode#ffs_fs_inode{ write_cache = Cache }).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -476,13 +476,13 @@ write_cache(Ctx,InodeI,Cache) ->
 %%
 %% @spec
 %%   flush_cache(Ctx,InodeI,Chunk) -> ok | enoent
-%%      Ctx = ffs_fat_ctx()
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %% @end
 %%--------------------------------------------------------------------
 flush_cache(Ctx,INodeI,Chunk) ->
     INode = lookup(Ctx,INodeI),
-    ffs_fat_store:store_inode(Ctx, INode#ffs_inode{ chunks = Chunk }).
+    ffs_fat_store:store_inode(Ctx, INode#ffs_fs_inode{ chunks = Chunk }).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -490,7 +490,7 @@ flush_cache(Ctx,INodeI,Chunk) ->
 %%
 %% @spec
 %%   read(Ctx,InodeI,Size,Offset) -> {NewOffset,ChunkIds}
-%%      Ctx = ffs_fat_ctx()
+%%      Ctx = ffs_fs_ctx()
 %%      InodeI = inodei()
 %%      NewOffset = integer()
 %%      ChunkIds = [{chunk,ChunkId}] | []
@@ -498,24 +498,24 @@ flush_cache(Ctx,INodeI,Chunk) ->
 %%--------------------------------------------------------------------
 read(Ctx,InodeI,Length,Offset) ->
     Inode = lookup(Ctx,InodeI),
-    read_chunks(Inode#ffs_inode.chunks,0,Offset,Length).
+    read_chunks(Inode#ffs_fs_inode.chunks,0,Offset,Length).
 
 read_chunks([],CurrSize,Offset,_Length) ->
 	{Offset - CurrSize,[]};
-read_chunks([#ffs_chunk{ size = Size } = Chunk|T], CurrSize, Offset, Length) 
+read_chunks([#ffs_fs_chunk{ size = Size } = Chunk|T], CurrSize, Offset, Length) 
 		when (Size + CurrSize) > Offset ->
 	{Offset-CurrSize, read_data(T,Size - (Offset-CurrSize),[Chunk],Length)};
-read_chunks([#ffs_chunk{ size = Size } = _Chunk|T], CurrSize, Offset, Length) ->
+read_chunks([#ffs_fs_chunk{ size = Size } = _Chunk|T], CurrSize, Offset, Length) ->
 	read_chunks(T, CurrSize+Size, Offset, Length).
 
 %% If we have read all chunks
 read_data(Chunks, CurrLength, Acc, Length) 
 		when Chunks == [];CurrLength == Length ->
 	lists:reverse(Acc);
-read_data([#ffs_chunk{ size = Size } = Chunk|_T], CurrLength, Acc, Length) 
+read_data([#ffs_fs_chunk{ size = Size } = Chunk|_T], CurrLength, Acc, Length) 
 		when (CurrLength + Size + 1) > Length ->
 	lists:reverse([Chunk|Acc]);
-read_data([#ffs_chunk{ size = Size } = Chunk|T], CurrLength, Acc, Length) ->
+read_data([#ffs_fs_chunk{ size = Size } = Chunk|T], CurrLength, Acc, Length) ->
 	read_data(T,CurrLength + Size,[Chunk|Acc],Length).
 
 
