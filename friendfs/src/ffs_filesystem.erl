@@ -247,11 +247,11 @@ create(FsName, ParentI, Name, Uid, Gid, Mode) ->
 delete(FsName, ParentI,Name) ->
     Ctx = ffs_config:read({fs_ctx, FsName}),
     case ffs_fat:unlink(Ctx,ParentI,Name) of
-	{delete,Inode} ->
-	    [ffs_chunk_server:delete(ChunkId) ||
-		ChunkId <- Inode#ffs_fs_inode.chunks];
-	_Else ->
-	    ok
+        {delete,Inode} ->
+            [ffs_chunk_server:delete(ChunkId) ||
+                ChunkId <- Inode#ffs_fs_inode.chunks];
+        _Else ->
+            ok
     end.
 
 
@@ -346,7 +346,7 @@ init(Name) ->
     Config = [{block_size,512},
 	      {inode_limit,1 bsl 32},
 	      {filesystem_id,1},
-	      {chunk_size,1 bsl 20}, %% 8 B
+	      {chunk_size,1 bsl 16}, %% 8 B
 	      {mnt_opts,0},
 	      {max_filename_size,36#sup},
               {uid,-1},
@@ -359,6 +359,12 @@ init(Name) ->
 		       ffs_lib:get_value(gid,Config),
 		       ffs_lib:get_value(mode,Config)),
     ffs_config:write({fs_ctx, Name}, Ctx), 
+    lists:foreach(fun(#ffs_fs_inode{chunks=Cs}) ->
+                          Ratio = 2,
+                          [ffs_chunk_server:register_chunk(Name, ChunkId, Ratio)
+                           || #ffs_fs_chunk{chunkid=ChunkId } <- Cs]
+                  end, ffs_fat:list(Ctx, all)),
+
     ok.
 
 stop(Name) ->
