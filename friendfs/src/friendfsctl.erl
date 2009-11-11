@@ -88,17 +88,34 @@ handle_cmd(["status"]) ->
                         [S#storage.url, S#storage.priority,
                          speed(S#storage.read_speed), speed(S#storage.write_speed)])
       end,S0),
-    io:format("\nChunks with bad ratio:\n", []),
-    No = lists:foldl(
-           fun(C, Acc) when C#chunk.ratio > length(C#chunk.storages) ->
-                   io:format("~s, ~p/~p\n",
-                             [C#chunk.id, length(C#chunk.storages), C#chunk.ratio]),
-                   Acc;
-              (_C, Acc) ->
-                   Acc+1
-           end,0,C0),
-    io:format("Chunks with ok ratio: ~B~n", [No]),
+    {Bad, Ok, Undef} = lists:foldl(
+                  fun(C, {B, O, U}) when C#chunk.ratio =:= undefined ->
+                          {B, O, U+1};
+                     (C, {B, O, U}) when C#chunk.ratio > length(C#chunk.storages) ->
+                          {B+1, O, U};
+                     (_C, {B, O, U}) ->
+                          {B, O+1, U}
+           end,{0,0, 0},C0),
+    io:format("\nChunks ratio\n  Bad: ~B\n  Undefined: ~B\n  Ok: ~B\n", [Bad, Undef, Ok]),
     0;
+handle_cmd(["status", "chunks", "ok"]) ->
+    {{_storages, S0},{_chunks, C0}} = ffs_chunk_server:info(),
+    io:format("Chunks with ok ratio:\n", []),
+    Num = lists:foldl(
+            fun(C, N) when C#chunk.ratio =:= undefined ->
+                    N;
+               (C, N) when C#chunk.ratio > length(C#chunk.storages) ->
+                    N;
+               (#chunk{storages=S, id=I}, N) ->
+                    io:format("~p: ~p\n", [I, S]),
+                    N+1
+           end,0,C0),
+    
+    0;
+handle_cmd(["status"|Other]) ->
+    io:format("Unknown status command: ~p~n~n", [Other]),
+    usage(),
+    100;
 handle_cmd(["stop"]) ->
     %% Spawn off to make sure rpc returns
     spawn(fun() -> timer:sleep(10),init:stop() end),

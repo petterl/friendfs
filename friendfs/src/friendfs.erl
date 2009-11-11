@@ -75,8 +75,9 @@ start(_Type, _Args) ->
 
 
 start(start,_Type,_Args) ->
+    Res = friendfs_sup:start_link([]),
     init_filesystems(),
-    friendfs_sup:start_link([]);
+    Res;
 start(ctl,_Type,_Args) ->
     Cmd = init:get_plain_arguments(),
     friendfsctl:cmd(Cmd),
