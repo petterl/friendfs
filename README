@@ -2,7 +2,7 @@ PREREQ:
 The fuserl c driver has to be installed. You can find it here:
 http://fuserl.googlecode.com/files/fuserldrv-2.0.3.tar.gz
 
-If you are have root just follow the instructions and instal it in the
+If you are have root just follow the instructions and install it in the
 default location. If you are not root or want to install the c driver
 someplace else you need to update
 lib/fuserl-2.0.5/src/fuserl.appSrc. The thing you need to change is
@@ -10,7 +10,6 @@ fuserldrvprefix from auto_detect to the path where you have the fuserl
 c driver installed:
 
 i.e. 
-
 {env,[{fuserldrvprefix,"/home/lukas/fuserlcdrv/"}]}
 
 INSTALL:
@@ -21,36 +20,30 @@ make
 STARTING FRIENDFS:
 
 First you need to configure friendfs
-copy friendfs/doc/friendfs.conf to a good place
+copy friendfs/doc/friendfs.conf.example to a good place
 
 Set FRIENDFS_CONF to the path to the updated config file
-If you put it as /etc/friendfs.conf you dont need to set the 
-FRIENDFS_CONF.
+If you put it as /etc/friendfs.conf or $HOME/.friendfs.conf
+you dont need to set the FRIENDFS_CONF.
 
 You then can start and connect to the erlang VM using the command:
 
-scripts/friendfsctrl start
-
-Right now the configuration file which is uses is
-lib/friendfs-0.1.0/doc/test.config. In it the directory ffs_data is
-used to as the point which the started file storage stores its data so
-inorder for the VM to not crash on startup you need to manually create
-the ffs_data directory.
+scripts/friendfsctl start
 
 USING FRIENDFS:
 
 You wont have any fun without a mount point where you can put your
-files. You create a mountpoint by logging into the erlang VM and
-issuing the following command:
+files. You create a mountpoint with:
 
-(friendfs@seasc1615)1> ffs_mounpoint_sup:mount("/dir/to/mount/to","fs=home").
+scripts/friendfsctl mount <mountpoint> <options>
 
+<options> is fs=<filesystem>
 
 remember that /dir/to/mount/to has to exist before you can mount you
 new friendfs filesystem into it!
 
 You connect to the erlang VM by issuing this command:
 
-scripts/friendfsctl connect
+scripts/friendfsctl shell
 
 If you have any question rtfs!
