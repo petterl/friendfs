@@ -77,6 +77,7 @@ start(_Type, _Args) ->
 start(start,_Type,_Args) ->
     Res = friendfs_sup:start_link([]),
     init_filesystems(),
+    application:set_env(friendfs, state, started),
     Res;
 start(ctl,_Type,_Args) ->
     Cmd = init:get_plain_arguments(),

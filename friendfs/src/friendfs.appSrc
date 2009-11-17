@@ -7,6 +7,7 @@
               {mod,{friendfs,[]}},
               {env,[{linked_in,false},
 		    {cmd,start},
+		    {state, not_started},
                     {config_path,"/etc/friendfs.conf"},
                     {config_default_path,"lib/friendfs-0.1.0/priv/default.config"},
                     {mount_opts,"default_permissions"}]}]}.
