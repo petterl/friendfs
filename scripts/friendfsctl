@@ -11,6 +11,7 @@ if [ ! -f ${FRIENDFS_CONF} ]; then
     FRIENDFS_CONF=$HOME/.friendfs.conf
 fi
 if [ ! -f ${FRIENDFS_CONF} ]; then 
+    echo "Copying $ROOTDIR/friendfs/doc/friendfs.conf.example to $FRIENDFS_CONF"
     cp $ROOTDIR/friendfs/doc/friendfs.conf.example $FRIENDFS_CONF
 fi
 
@@ -23,7 +24,7 @@ function ctl() {
         -friendfs config_path "\"${FRIENDFS_CONF}\"" \
         -sasl errlog_type error \
         -friendfs cmd ctl \
-	    -extra "$@"
+	-extra "$@"
 }
 
 function start() {
@@ -34,8 +35,7 @@ function start() {
         $RUN_ERL "exec ${START_ERL} \
             -sname friendfs@${HOST} \
             -friendfs config_path '\"$FRIENDFS_CONF\"'"
-        sleep 1
-        if ctl ping; then
+        if ctl wait start; then
             echo "done"
         else
             echo "failed to start, check logs"
