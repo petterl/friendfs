@@ -150,7 +150,7 @@ get_access(#fuse_ctx{ },?W_OK,#ffs_fs_inode{ mode = Mask })
   when (Mask band ?O_W) =/= 0 ->
     ok;
 get_access(_,_,_) ->
-    eaccess.
+    eacces.
 
 
 
