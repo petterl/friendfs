@@ -31,7 +31,7 @@
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
-mount(MountPoint,Options) -
+mount(MountPoint,Options) ->
     Spec = {MountPoint, {ffs_mountpoint, start_link, [MountPoint,Options]},
 	    permanent, 10000, worker, [ffs_mountpoint]},
     supervisor:start_child(?SERVER, Spec).
