@@ -47,6 +47,19 @@ cmd(["ping"]) ->
             halt(255)
     end;  
 
+cmd(["wait", "start"] = C) ->
+    case rpc:call(?NODE, ?MODULE, handle_cmd, [C]) of
+        {badrpc, nodedown} ->
+	    timer:sleep(50),
+	    cmd(C);
+        {badrpc, R} ->
+            io:format("Failed to communicate with ~p: ~p~n~n", [?NODE, R]),
+            usage(),
+            halt(100);
+        S ->
+            halt(S)
+    end;
+
 cmd(["stop"]) ->
     case rpc:call(?NODE, ?MODULE, handle_cmd, [["stop"]]) of
         {badrpc, nodedown} ->
@@ -72,6 +85,9 @@ cmd(Command) ->
             halt(S)
     end.
 
+handle_cmd(["wait", "start"]) ->
+    wait_started(),
+    0;
 handle_cmd(["status"]) ->
     Filesystems = ffs_config:get_filesystems(),
     io:format("Filesystems:\n", []),
@@ -99,7 +115,7 @@ handle_cmd(["status"]) ->
     io:format("\nChunks ratio\n  Bad: ~B\n  Undefined: ~B\n  Ok: ~B\n", [Bad, Undef, Ok]),
     0;
 handle_cmd(["status", "chunks", "ok"]) ->
-    {{_storages, S0},{_chunks, C0}} = ffs_chunk_server:info(),
+    {{_storages, _S0},{_chunks, C0}} = ffs_chunk_server:info(),
     io:format("Chunks with ok ratio:\n", []),
     Num = lists:foldl(
             fun(C, N) when C#chunk.ratio =:= undefined ->
@@ -110,7 +126,7 @@ handle_cmd(["status", "chunks", "ok"]) ->
                     io:format("~p: ~p\n", [I, S]),
                     N+1
            end,0,C0),
-    
+    io:format("Chunks: ~p\n", [Num]),    
     0;
 handle_cmd(["status"|Other]) ->
     io:format("Unknown status command: ~p~n~n", [Other]),
@@ -178,3 +194,10 @@ speed(Bps) when Bps > 1024.0 ->
 speed(Bps) ->
     io_lib:format("~.2f b/s", [Bps]).
     
+wait_started() ->
+    case application:get_env(friendfs, state) of
+	{ok, started} -> ok;
+	_ ->
+	    timer:sleep(500),
+	    wait_started()
+    end.
