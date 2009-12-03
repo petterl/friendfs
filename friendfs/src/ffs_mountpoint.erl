@@ -18,7 +18,7 @@
 %-behaviour(fuserlsrv).
 
 %% API
--export([start_link/2]).
+-export([start_link/5]).
 
 %% fuserlsrv general callbacks
 -export([init/1, handle_info/2,terminate/2, code_change/3]).
@@ -71,20 +71,28 @@
 %% @spec start_link(MountPoint,Options) -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(MountPoint,Options) ->
-    {MountOpts,FfsOpts} = parse_options(Options),
+
+start_link(MountPoint,Filesystem,DefaultUid0,DefaultGid0,MountOpts) ->
+%    {MountOpts,FfsOpts} = parse_options(Options),
 
     {ok,FileInfo} = file:read_file_info(MountPoint),
     
-    ParentGid = integer_to_list(FileInfo#file_info.gid),
-    ParentUid = integer_to_list(FileInfo#file_info.uid),
-    
-    DefaultGid = list_to_integer(proplists:get_value("gid",FfsOpts,ParentGid)),
-    DefaultUid = list_to_integer(proplists:get_value("uid",FfsOpts,ParentUid)),
+    DefaultUid = case DefaultUid0 of
+                     undefined -> FileInfo#file_info.uid;
+                     Value0 -> Value0
+                 end,
+
+    DefaultGid = case DefaultGid0 of
+                     undefined -> FileInfo#file_info.gid;
+                     Value1 -> Value1
+                 end,
+
+%    DefaultGid = list_to_integer(proplists:get_value("gid",FfsOpts,ParentGid)),
+%    DefaultUid = list_to_integer(proplists:get_value("uid",FfsOpts,ParentUid)),
     
     {ok,LinkedIn} = application:get_env(friendfs,linked_in),
     fuserlsrv:start_link(?MODULE,LinkedIn,MountOpts,
-			 MountPoint,{MountPoint,DefaultUid,DefaultGid,FfsOpts},
+			 MountPoint,{MountPoint,Filesystem,DefaultUid,DefaultGid},
 			 []).
 
 %%%===================================================================
@@ -766,9 +774,7 @@ unlink_async(Ctx, ParentI, Name, State) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init({_MountPoint,DefUid,DefGid,FfsOpts}) ->
-    Filesystem = proplists:get_value("fs",FfsOpts),
-
+init({_MountPoint,Filesystem,DefUid,DefGid}) ->
     {ok, #state{ filesystem = Filesystem,
 		 default_gid = DefGid,
 		 default_uid = DefUid }}.
@@ -820,20 +826,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%==================================================================
-
-parse_options(String) ->
-    Tokens = string:tokens(String,","),
-    parse_options(Tokens,"",[]).
-parse_options(["fs="++Filesystem|T],MountAcc,FfsAcc) ->
-    parse_options(T,MountAcc,[{"fs",Filesystem}|FfsAcc]);
-parse_options(["gid="++Filesystem|T],MountAcc,FfsAcc) ->
-    parse_options(T,MountAcc,[{"gid",Filesystem}|FfsAcc]);
-parse_options(["uid="++Filesystem|T],MountAcc,FfsAcc) ->
-    parse_options(T,MountAcc,[{"uid",Filesystem}|FfsAcc]);
-parse_options([Key|T],MountAcc,FfsAcc) ->
-    parse_options(T,Key++MountAcc,FfsAcc);
-parse_options([],MountAcc,FfsAcc) ->
-    {MountAcc,FfsAcc}.
 
 to_unix({Mega,Secs,_Micro}) ->
 	Mega*1000000+Secs.

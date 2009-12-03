@@ -320,18 +320,18 @@ handle_call({ write, Ratio, Data}, From, State) ->
 
 handle_call({ delete, ChunkId}, _From, State) ->
     Res = case ets:lookup(chunks, ChunkId) of
-	      [#chunk{ref_cnt=RefCnt}] when RefCnt =< 0 ->
-		  %% Refcount 0 no user of file
-		  {error, not_found};
-	      [#chunk{ref_cnt=RefCnt}] ->
-		  ets:update_element(chunks, ChunkId, 
-				     {#chunk.ref_cnt, RefCnt-1}),
-		  ffs_chunk_replicator:refresh(),
-		  ok;
-	      [] ->
-		  %% Chunk not found, no user of file.
-		  {error, not_found}
-	  end,
+              [#chunk{ref_cnt=RefCnt}] when RefCnt =< 0 ->
+                  % Refcount 0 no user of file
+                  {error, not_found};
+              [#chunk{ref_cnt=RefCnt}] ->
+                  ets:update_element(chunks, ChunkId, 
+                                     {#chunk.ref_cnt, RefCnt-1}),
+                  ffs_chunk_replicator:refresh(),
+                  ok;
+              [] ->
+                  % Chunk not found, no user of file.
+                  {error, not_found}
+          end,
     {reply, Res, State};
 
 handle_call({ register_chunk, ChunkId, Ratio, _FsName}, _From, State) ->

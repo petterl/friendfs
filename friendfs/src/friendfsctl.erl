@@ -89,8 +89,14 @@ handle_cmd(["wait", "start"]) ->
     wait_started(),
     0;
 handle_cmd(["status"]) ->
+    MountPoints = ffs_mountpoint_sup:list_mountpoints(),
+    io:format("MountPoints:\n", []),
+    lists:foreach(
+      fun({MountPoint, Filesystem}) ->
+              io:format("  ~s -> ~s\n", [MountPoint, Filesystem])
+      end,MountPoints),
     Filesystems = ffs_config:get_filesystems(),
-    io:format("Filesystems:\n", []),
+    io:format("\nFilesystems:\n", []),
     lists:foreach(
       fun({{"Filesystem", Fs},Config}) ->
               {_, Comment} = lists:keyfind("Comment", 1, Config),
@@ -164,7 +170,8 @@ handle_cmd(["mount", Path]) ->
     end;
 handle_cmd(["mount", Path, Options]) ->
     io:format("Mounting friendfs in ~p with ~p\n", [Path, Options]),
-    ffs_mountpoint_sup:mount(Path, Options),
+    {Filesystem,Uid,Gid,MountOpts} = parse_mount_options(Options),
+    ffs_mountpoint_sup:mount(Path,Filesystem,Uid,Gid,MountOpts),
     0;
 handle_cmd(["unmount", Path]) ->
     Fs = "temp",
@@ -201,3 +208,17 @@ wait_started() ->
 	    timer:sleep(500),
 	    wait_started()
     end.
+
+parse_mount_options(String) ->
+    Tokens = string:tokens(String,","),
+    parse_mount_options(Tokens,{undefined,undefined,undefined,[]}).
+parse_mount_options(["fs="++Fs|T],{_Fs,Uid,Gid,O}) ->
+    parse_mount_options(T,{Fs,Uid,Gid,O});
+parse_mount_options(["gid="++Gid|T],{Fs,Uid,_Gid,O}) ->
+    parse_mount_options(T,{Fs,Uid,list_to_integer(Gid),O});
+parse_mount_options(["uid="++Uid|T],{Fs,_Uid,Gid,O}) ->
+    parse_mount_options(T,{Fs,list_to_integer(Uid),Gid,O});
+parse_mount_options([Key|T],{Fs,Uid,Gid,O}) ->
+    parse_mount_options(T,{Fs,Uid,Gid,O++Key});
+parse_mount_options([],{Fs,Uid,Gid,O}) ->
+    {Fs,Uid,Gid,O}.

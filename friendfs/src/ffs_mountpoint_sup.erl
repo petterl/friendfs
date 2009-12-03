@@ -12,8 +12,8 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, mount/2,umount/1]).
--export([init/1]).
+-export([start_link/0, init/1]).
+-export([mount/5, umount/1, list_mountpoints/0]).
 
 -define(SERVER, ?MODULE).
 
@@ -31,9 +31,10 @@
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
-mount(MountPoint,Options) ->
-    Spec = {MountPoint, {ffs_mountpoint, start_link, [MountPoint,Options]},
-	    permanent, 10000, worker, [ffs_mountpoint]},
+mount(MountPoint,Filesystem,Uid,Gid,MountOpts) ->
+    Spec = {{MountPoint,Filesystem}, {ffs_mountpoint, start_link,
+                         [MountPoint,Filesystem,Uid,Gid,MountOpts]},
+            permanent, 10000, worker, [ffs_mountpoint]},
     supervisor:start_child(?SERVER, Spec).
 
 umount(MountPoint) ->
@@ -46,8 +47,13 @@ umount(MountPoint) ->
 	true ->
 	    {error,umount_failed}
     end.
-    
-    
+
+list_mountpoints() ->
+    lists:map(
+      fun({{MountPoint, Filesystem}, _Pid, _Type, _Module}) ->
+              {MountPoint, Filesystem}
+      end,
+      supervisor:which_children(?SERVER)).
 
 %%%===================================================================
 %%% supervisor callbacks
