@@ -57,7 +57,7 @@
 	  write/7
 	]).
 
--record(state,{ filesystem, default_uid, default_gid }).
+-record(state,{ filesystem, default_uid, default_gid, sessions=[] }).
 
 -define(DBG2(Str), ?DBG("Ctx = ~p~n~p~n", [Ctx, Str])).
 
@@ -789,6 +789,13 @@ init({_MountPoint,Filesystem,DefUid,DefGid}) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+%handle_info({'DOWN', _Ref, process, Pid, _Reason}, State) ->
+%    Err = #fuse_reply_err{ err = internal_error },
+%    fuserlsrv:reply(Cont,Res)
+%    {noreply, State};
+handle_info({'DOWN', Ref, process, _Pid, normal}, State) ->
+    State1 = State#state{sessions = proplists:keydelete(Ref, State#state.sessions)}, 
+    {noreply, State1};
 handle_info({'EXIT',_Pid,killed},State) ->
     {stop,killed,State};
 handle_info(_Info, State) ->
@@ -834,13 +841,14 @@ unix_to_now(Secs) ->
 	{Secs div 1000000, Secs rem 1000000,0}.
 	
 async(Fun,Cont,State) ->
-    spawn(fun() ->
-		  Res = Fun(),
-		  fuserlsrv:reply(Cont,Res)
-	  end
-	 ),
-    {noreply,State}.
-	
+    {_P,Ref} = spawn_monitor(
+      fun() ->
+              Res = Fun(),
+              fuserlsrv:reply(Cont,Res)
+      end),
+    State1 = State#state{sessions = State#state.sessions ++ [{Ref, Cont}]},
+    {noreply,State1}.
+
 	
 inode_to_param(#ffs_fs_inode{inode = InodeI} = Inode,State) ->
     #fuse_entry_param{ ino = InodeI,
