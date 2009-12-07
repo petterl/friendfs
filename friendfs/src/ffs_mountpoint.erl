@@ -794,7 +794,12 @@ init({_MountPoint,Filesystem,DefUid,DefGid}) ->
 %    fuserlsrv:reply(Cont,Res)
 %    {noreply, State};
 handle_info({'DOWN', Ref, process, _Pid, normal}, State) ->
-    State1 = State#state{sessions = proplists:keydelete(Ref, State#state.sessions)}, 
+    State1 = State#state{sessions = proplists:delete(Ref, State#state.sessions)}, 
+    {noreply, State1};
+handle_info({'DOWN', Ref, process, _Pid, Error}, State) ->
+    Cont = proplists:get_value(Ref, State#state.sessions),
+    State1 = State#state{sessions = proplists:delete(Ref, State#state.sessions)}, 
+    fuserlsrv:reply(Cont,#fuse_reply_err{ err = eacces }),
     {noreply, State1};
 handle_info({'EXIT',_Pid,killed},State) ->
     {stop,killed,State};
