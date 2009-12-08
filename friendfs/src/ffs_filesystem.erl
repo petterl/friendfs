@@ -353,7 +353,7 @@ init(Name) ->
 	      {max_filename_size,36#sup},
               {uid,-1},
               {gid,-1},
-              {mode,755}],
+              {mode,8#755}],
     ffs_config:write({fs_config, Name}, Config), 
     
     Ctx = ffs_fat:init(Name,
