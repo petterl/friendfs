@@ -19,6 +19,9 @@
 %% Fuse Help API
 -export([fuse_mode_info/1]).
 
+%% Tracing API
+-export([dbg/2,dbg/3]).
+
 
 log_error(Mod, Line, Fmt, Vars) ->
     io:format("~p:~p: **ERROR**:"++Fmt, [Mod, Line|Vars]),
@@ -79,3 +82,16 @@ fuse_mode_info(Octet) ->
     io:format("~p~n",[(?S_IWOTH band Octet) /= 0]), 
     io:format("others have execute permission: "),
     io:format("~p~n",[(?S_IXOTH band Octet) /= 0]).
+
+
+dbg(MS,M) ->
+	dbg(MS,M,'_').
+dbg(r,M,F) ->
+	dbg:tracer(),
+	dbg:p(all,c),
+	dbg:tpl(M,F,[{'_',[],[{return_trace}]}]);
+	
+dbg(d,M,F) ->
+	dbg:tracer(),
+	dbg:p(all,c),	
+	dbg:tpl(M,F,[]).
