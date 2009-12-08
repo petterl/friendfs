@@ -169,14 +169,23 @@ handle_cmd(["mount", Path]) ->
             100
     end;
 handle_cmd(["mount", Path, Options]) ->
-    io:format("Mounting friendfs in ~p with ~p\n", [Path, Options]),
     {Filesystem,Uid,Gid,MountOpts} = parse_mount_options(Options),
-    ffs_mountpoint_sup:mount(Path,Filesystem,Uid,Gid,MountOpts),
-    0;
-handle_cmd(["unmount", Path]) ->
-    Fs = "temp",
-    io:format("UnMounting filesystem ~p on ~p\n", [Fs, Path]),
-    0;
+    case ffs_mountpoint_sup:mount(Path,Filesystem,Uid,Gid,MountOpts) of
+	{already_mounted, Fs} ->
+	    io:format("Filesystem ~p already mounted at ~p", [Fs, Path]),
+	    100;
+	_ ->
+	    io:format("Mounting friendfs in ~p with ~p\n", [Path, Options]),
+	    0
+    end;
+handle_cmd(["umount", Path]) ->
+    case ffs_mountpoint_sup:umount(Path) of
+	{error, umount_failed} ->
+	    io:format("Failed to unmount ~p", [Path]),
+	    100;
+	ok ->
+	    0
+    end;
 handle_cmd(Other) ->
     io:format("Unknown command: ~p~n~n", [Other]),
     usage(),

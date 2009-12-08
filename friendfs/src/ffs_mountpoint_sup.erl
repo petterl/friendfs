@@ -32,21 +32,36 @@ start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 mount(MountPoint,Filesystem,Uid,Gid,MountOpts) ->
-    Spec = {{MountPoint,Filesystem}, {ffs_mountpoint, start_link,
-                         [MountPoint,Filesystem,Uid,Gid,MountOpts]},
-            permanent, 10000, worker, [ffs_mountpoint]},
-    supervisor:start_child(?SERVER, Spec).
+    case find_mountpoint(MountPoint) of
+	{MountPoint, Fs} ->
+	    {already_mounted, Fs};
+	not_found ->
+	    Spec = {{MountPoint,Filesystem}, {ffs_mountpoint, start_link,
+					      [MountPoint,Filesystem,Uid,Gid,MountOpts]},
+		    permanent, 10000, worker, [ffs_mountpoint]},
+	    supervisor:start_child(?SERVER, Spec)
+    end.
 
 umount(MountPoint) ->
-    Res = (supervisor:terminate_child(?SERVER,MountPoint) == ok)
-	andalso (supervisor:delete_child(?SERVER,MountPoint) == ok),
+    {MountPoint, Filesystem} = find_mountpoint(MountPoint),
+    Cid = {MountPoint, Filesystem},
+    Res = (supervisor:terminate_child(?SERVER,Cid) == ok)
+	andalso (supervisor:delete_child(?SERVER,Cid) == ok),
 
     if
 	Res ->
 	    ok;
 	true ->
 	    {error,umount_failed}
-    end.
+    end. 
+
+find_mountpoint(MP) ->
+    lists:foldl(fun({{MP, Filesystem}, _, _, _}, _) ->
+			{MP, Filesystem};
+		   (_, Cid) ->
+			Cid
+		end, not_found, 
+		supervisor:which_children(?SERVER)).
 
 list_mountpoints() ->
     lists:map(
