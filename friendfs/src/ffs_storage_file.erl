@@ -3,7 +3,7 @@
 %%% @doc
 %%% Storage module handling storage of chunks on local file system
 %%% @end
-%%% Created : 10 Aug 2009 by Petter Larsson <petter.larsson@ericsson.com>
+%%% Created : 10 Aug 2009 by Petter Larsson <petter@sandholdt.se>
 %%%-------------------------------------------------------------------
 -module(ffs_storage_file).
 
@@ -11,6 +11,7 @@
 
 -include_lib("kernel/include/file.hrl").
 -include("debug.hrl").
+-include("friendfs.hrl").
 
 -export([start_link/3]).
 
@@ -48,15 +49,14 @@ start_link(Name, Url, Config) ->
 %% @end
 %%--------------------------------------------------------------------
 init({Name, Url, Config}) ->
-    {_Scheme, Host, UrlPath, _Query, _Fragment} =
-        ffs_lib:split_url(Url),
-	Path = case Host of
-		"" ->
-			UrlPath;
-		_Else ->
-			%% non absolute file path
-			Host++UrlPath
-	end,
+    #url{hostname = Host, path = UrlPath} = ffs_lib:split_url(Url),
+    Path = case Host of
+	       "" ->
+		   UrlPath;
+	       _Else ->
+		   %% non absolute file path
+		   Host++UrlPath
+	   end,
     Prio = proplists:get_value("Priority", Config, 100),
     
     case file:list_dir(Path) of

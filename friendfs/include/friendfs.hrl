@@ -81,3 +81,13 @@
 -define(FREE_MEM,free_mem).
 -define(FREE_INODES,free_inodes).
 
+-record(url,
+	{scheme,
+	 username,
+	 password,
+	 hostname,
+	 port,
+	 path,
+	 query_part,
+	 fragment}).	 
+

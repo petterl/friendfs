@@ -5,7 +5,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(ffs_lib).
-
+-include("friendfs.hrl").
 
 -export([split_url/1,urlsplit_scheme/1,read_config/2,parse_config/1,scan_config_str/2]).
 -export([path_split/1,get_value/2,get_chunkid/1,get_hash/1,print_base64/1,pmap/2]).
@@ -15,9 +15,17 @@
 
 split_url(Url) ->
     {Scheme, Url1} = urlsplit_scheme(Url),
-    {Netloc, Url2} = urlsplit_netloc(Url1),
-    {Path, Query, Fragment} = urlsplit_path(Url2),
-    {Scheme, Netloc, Path, Query, Fragment}.
+    {UserPass, Url2} = urlsplit_user(Url1),
+    {User, Password} = urlsplit_pass(UserPass),
+    {Netloc, Url3} = urlsplit_netloc(Url2),
+    {Path, Query, Fragment} = urlsplit_path(Url3),
+    #url{scheme=Scheme, 
+	 username=User, 
+	 password=Password, 
+	 hostname=Netloc, 
+	 path=Path, 
+	 query_part=Query, 
+         fragment=Fragment}.
 
 urlsplit_scheme(Url) ->
     urlsplit_scheme(Url, []).
@@ -28,6 +36,26 @@ urlsplit_scheme(":" ++ Rest, Acc) ->
     {string:to_lower(lists:reverse(Acc)), Rest};
 urlsplit_scheme([C | Rest], Acc) ->
     urlsplit_scheme(Rest, [C | Acc]).
+
+urlsplit_user("//" ++ Url) ->
+    urlsplit_user(Url, [], "//");
+urlsplit_user(Url) ->
+    urlsplit_user(Url, [], []).
+urlsplit_user([], Acc, S) ->
+    {"", S++lists:reverse(Acc)};
+urlsplit_user("@" ++ Rest, Acc, S) ->
+    {string:to_lower(lists:reverse(Acc)), S++Rest};
+urlsplit_user([C | Rest], Acc, S) ->
+    urlsplit_user(Rest, [C | Acc], S).
+
+urlsplit_pass(UserPass) ->
+    urlsplit_pass(UserPass, []).
+urlsplit_pass([], Acc) ->
+    {lists:reverse(Acc), ""};
+urlsplit_pass(":" ++ Rest, Acc) ->
+    {string:to_lower(lists:reverse(Acc)), Rest};
+urlsplit_pass([C | Rest], Acc) ->
+    urlsplit_pass(Rest, [C | Acc]).
 
 urlsplit_netloc("//" ++ Rest) ->
     urlsplit_netloc(Rest, []);
